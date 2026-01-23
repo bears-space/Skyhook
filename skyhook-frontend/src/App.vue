@@ -1,11 +1,10 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import { RouterView } from "vue-router"
+import DashboardLayout from "@/layouts/DashboardLayout.vue"
 </script>
 
 <template>
-  <HelloWorld msg="Vite + Vue" />
+  <DashboardLayout>
+    <RouterView />
+  </DashboardLayout>
 </template>
-
-<style scoped>
-
-</style>
