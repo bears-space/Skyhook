@@ -3,6 +3,7 @@ import Badge from "@/components/ui/badge/Badge.vue";
 import { ArrowDownToLine, ArrowUpFromLine } from "lucide-vue-next";
 import { computed, ref, onMounted, onBeforeUnmount } from "vue";
 import { socket } from "@/socket";
+import { useAlerts } from "@/lib/alerts";
 
 const TOTAL_SECONDS = 5 * 60 * 60;
 const remainingSeconds = ref(TOTAL_SECONDS);
@@ -49,8 +50,37 @@ const updateMetrics = () => {
 
 let intervalId
 onMounted(() => {
-    const setOnline = () => wsStatus.value = "Online";
-    const setOffline = () => wsStatus.value = "Offline";
+    const { show } = useAlerts();
+    let hasShownDisconnect = false;
+    const showDisconnected = () => {
+        if (!hasShownDisconnect) {
+            show({
+                title: "Disconnected from server",
+                description: "You have been disconnected from the server. Please check your network connection, and validate that the server is running.",
+                variant: "destructive",
+            });
+            hasShownDisconnect = true;
+        }
+    };
+    const showReconnected = () => {
+        if (hasShownDisconnect) {
+            show({
+                title: "Connection restored",
+                description: "Reconnected to the server.",
+                variant: "default",
+            });
+            hasShownDisconnect = false;
+        }
+    };
+
+    const setOnline = () => {
+        wsStatus.value = "Online";
+        showReconnected();
+    };
+    const setOffline = () => {
+        wsStatus.value = "Offline";
+        showDisconnected();
+    };
     const setReconnecting = () => wsStatus.value = "Reconnecting...";
 
     updateMetrics();
