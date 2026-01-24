@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+const URL = window.location.origin.split(":").slice(0, 2).join(":") + ":3000";
 
 // Create ONE shared socket instance for the whole app
 export const socket = io(URL, {
