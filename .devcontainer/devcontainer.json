@@ -1,0 +1,42 @@
+{
+  "name": "Skyhook",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "postCreateCommand": "npm --prefix skyhook-frontend ci && npm --prefix skyhook-backend ci && python -m pip install -r skyhook-backend/requirements.txt",
+  "forwardPorts": [5173, 3000, 5000],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite dev server"
+    },
+    "3000": {
+      "label": "Node Socket.IO backend"
+    },
+    "5000": {
+      "label": "Flask backend"
+    }
+  },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "Vue.volar",
+        "Vue.vscode-typescript-vue-plugin",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}
