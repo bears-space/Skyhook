@@ -1,7 +1,9 @@
 <script setup>
 import AppSidebar from "@/components/AppSidebar.vue"
+import StatusBarFooter from "@/components/StatusBarFooter.vue";
 import Badge from "@/components/ui/badge/Badge.vue";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar"
+import { ArrowDownToLine, ArrowUpFromLine } from "lucide-vue-next";
 </script>
 
 <template>
@@ -14,17 +16,7 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
           <slot />
         </main>
 
-        <div class="h-[40px] shrink-0 flex items-center border-t gap-2 px-2">
-          <Badge variant="outline" class="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
-            WebSocket
-          </Badge>
-          <Badge variant="outline" class="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
-            Uplink
-          </Badge>
-          <Badge variant="outline" class="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
-            Downlink
-          </Badge>
-        </div>
+        <StatusBarFooter />
       </SidebarInset>
     </div>
   </SidebarProvider>
