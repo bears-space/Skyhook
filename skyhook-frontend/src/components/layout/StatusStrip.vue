@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import Badge from "@/components/ui/badge/Badge.vue"
 import { ArrowDownToLine, ArrowUpFromLine } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
+import { useCounterStore } from "@/stores/counter"
+
+const store = useCounterStore()
+const { count, doubled } = storeToRefs(store) // <- important
+const { inc } = store
 
 const props = defineProps<{
   uplinkSpeed: string
@@ -27,6 +33,11 @@ const props = defineProps<{
       <Badge variant="outline" class="cursor-pointer bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
         <ArrowDownToLine class="h-4 w-4" />
         {{ props.bbSpeed }}
+      </Badge>
+      <Badge variant="outline" class="cursor-pointer bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
+        <div>count: {{ count }}</div>
+        <div>doubled: {{ doubled }}</div>
+        <button @click="inc">+1</button>
       </Badge>
     </div>
   </div>

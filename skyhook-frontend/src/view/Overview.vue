@@ -1,7 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, onMounted, ref, toRef, watchEffect } from "vue"
 import Badge from "@/components/ui/badge/Badge.vue"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { storeToRefs } from "pinia"
+import { useLaunchpadStore } from "@/stores/launchpad"
+
+const lp = useLaunchpadStore()
+const { countdownText, timer, meta } = storeToRefs(lp)
+
+// 1) phase VALUE (what you actually show)
+const phase = computed(() => timer.value.phase.value) // "T-" | "T+" | "N/A"
+
+// 2) phase META (age/stale/ts)
+const phaseMeta = computed(() => meta.value.timer.phase) // { ts, ageMs, isStale }
+
+// optional: if you want the whole Timed<> field as a ref
+const phaseField = toRef(timer.value, "phase") // Ref<Timed<"T-" | "T+" | "N/A">>
 
 type EventRow = {
   time: string
@@ -34,7 +48,7 @@ type Kpi = {
 const kpis = ref<Kpi[]>([
   {
     label: "Launch Timer",
-    value: "T-04:58:17",
+    value: phase.value + "" + countdownText.value,
     statuses: [
       { tone: "ok", message: "Ground has control over timer" },
     ],
@@ -87,6 +101,13 @@ const kpis = ref<Kpi[]>([
     ],
   },
 ])
+
+watchEffect(() => {
+  const timerKpi = kpis.value.find(k => k.label === "Launch Timer")
+  if (timerKpi) {
+    timerKpi.value = `${phase.value}${countdownText.value}`
+  }
+})
 
 const events = ref<EventRow[]>([
   { time: "T-00:04:21", source: "Pad", level: "info", message: "Hold-down clamps verified." },
