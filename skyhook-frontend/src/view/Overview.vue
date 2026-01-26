@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, onMounted, ref, toRef, watchEffect } from "vue"
 import Badge from "@/components/ui/badge/Badge.vue"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { storeToRefs } from "pinia"
+import { useLaunchpadStore } from "@/stores/launchpad"
+
+const lp = useLaunchpadStore()
+const { countdownText, timer, meta, launch } = storeToRefs(lp)
+
+const phase = computed(() => timer.value.phase.value) // "T-" | "T+" | "N/A"
+const phaseMeta = computed(() => meta.value.timer.phase) // { ts, ageMs, isStale }
+
+const launchHold = computed(() => launch.value.hold.value)
 
 type EventRow = {
   time: string
@@ -31,12 +41,12 @@ type Kpi = {
   statuses: KpiStatus[]
 }
 
-const kpis = ref<Kpi[]>([
+const kpis = computed<Kpi[]>(() => ([
   {
     label: "Launch Timer",
-    value: "T-04:58:17",
+    value: `${phase.value}${countdownText.value}`,
     statuses: [
-      { tone: "ok", message: "Ground has control over timer" },
+      { tone: launchHold.value ? "warn" : "ok", message: launchHold.value ? "Launch Hold" : "Go for Launch" },
     ],
   },
   {
@@ -86,7 +96,7 @@ const kpis = ref<Kpi[]>([
       { tone: "ok", message: "Mode: IR" },
     ],
   },
-])
+]))
 
 const events = ref<EventRow[]>([
   { time: "T-00:04:21", source: "Pad", level: "info", message: "Hold-down clamps verified." },
