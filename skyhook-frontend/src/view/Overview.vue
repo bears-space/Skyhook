@@ -6,16 +6,12 @@ import { storeToRefs } from "pinia"
 import { useLaunchpadStore } from "@/stores/launchpad"
 
 const lp = useLaunchpadStore()
-const { countdownText, timer, meta } = storeToRefs(lp)
+const { countdownText, timer, meta, launch } = storeToRefs(lp)
 
-// 1) phase VALUE (what you actually show)
 const phase = computed(() => timer.value.phase.value) // "T-" | "T+" | "N/A"
-
-// 2) phase META (age/stale/ts)
 const phaseMeta = computed(() => meta.value.timer.phase) // { ts, ageMs, isStale }
 
-// optional: if you want the whole Timed<> field as a ref
-const phaseField = toRef(timer.value, "phase") // Ref<Timed<"T-" | "T+" | "N/A">>
+const launchHold = computed(() => launch.value.hold.value)
 
 type EventRow = {
   time: string
@@ -45,12 +41,12 @@ type Kpi = {
   statuses: KpiStatus[]
 }
 
-const kpis = ref<Kpi[]>([
+const kpis = computed<Kpi[]>(() => ([
   {
     label: "Launch Timer",
-    value: phase.value + "" + countdownText.value,
+    value: `${phase.value}${countdownText.value}`,
     statuses: [
-      { tone: "ok", message: "Ground has control over timer" },
+      { tone: launchHold.value ? "warn" : "ok", message: launchHold.value ? "Launch Hold" : "Go for Launch" },
     ],
   },
   {
@@ -100,14 +96,7 @@ const kpis = ref<Kpi[]>([
       { tone: "ok", message: "Mode: IR" },
     ],
   },
-])
-
-watchEffect(() => {
-  const timerKpi = kpis.value.find(k => k.label === "Launch Timer")
-  if (timerKpi) {
-    timerKpi.value = `${phase.value}${countdownText.value}`
-  }
-})
+]))
 
 const events = ref<EventRow[]>([
   { time: "T-00:04:21", source: "Pad", level: "info", message: "Hold-down clamps verified." },
