@@ -7,7 +7,8 @@ import AppHeader from "@/components/layout/AppHeader.vue"
 import AppSidebar from "@/components/layout/AppSidebar.vue"
 import StatusStrip from "@/components/layout/StatusStrip.vue"
 import { socket } from "@/socket"
-import { useAlerts } from "@/lib/alerts"
+import { notify } from "@/lib/notifications"
+import { WifiOffIcon } from "lucide-vue-next"
 
 const route = useRoute()
 const THEME_STORAGE_KEY = "skyhook-theme"
@@ -74,15 +75,15 @@ onMounted(() => {
 })
 
 onMounted(() => {
-  const { show } = useAlerts()
   let hasShownDisconnect = false
 
   const showDisconnected = () => {
     if (!hasShownDisconnect) {
-      show({
+      notify({
         title: "Disconnected from server",
         description: "You have been disconnected from the server. Please check your network connection, and validate that the server is running.",
-        variant: "destructive",
+        variant: "error",
+        icon: WifiOffIcon,
       })
       hasShownDisconnect = true
     }
@@ -90,7 +91,7 @@ onMounted(() => {
 
   const showReconnected = () => {
     if (hasShownDisconnect) {
-      show({
+      notify({
         title: "Connection restored",
         description: "Reconnected to the server.",
         variant: "default",
@@ -146,7 +147,6 @@ onBeforeUnmount(() => {
       @toggle-theme="toggleTheme"
     />
 
-    <!-- ✅ changed: flex column + header + centered content -->
     <SidebarInset class="min-h-svh pb-12 flex flex-col bg-muted/20">
       <!-- top header bar -->
       <AppHeader
@@ -167,6 +167,6 @@ onBeforeUnmount(() => {
     <!-- bottom status strip: slightly more “polished” -->
     <StatusStrip :uplink-speed="uplinkSpeed" :nb-speed="nbSpeed" :bb-speed="bbSpeed" />
 
-    <Toaster />
+    <Toaster :theme="isDark ? 'dark' : 'light'" rich-colors/> <!-- why is this dark mode shit even needed, shouldnt it do that automatically? -->
   </SidebarProvider>
 </template>
