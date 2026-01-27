@@ -3,6 +3,8 @@ import Badge from "@/components/ui/badge/Badge.vue"
 import { storeToRefs } from "pinia"
 import { useLaunchpadStore } from "@/stores/launchpad"
 import { computed } from "vue"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
+import { ArrowUpFromLine } from "lucide-vue-next"
 
 const lp = useLaunchpadStore()
 const { countdownText, timer, launch } = storeToRefs(lp)
@@ -32,7 +34,21 @@ const props = defineProps<{
       </div>
 
       <div class="ml-auto flex items-center gap-2">
-        <Badge variant="outline" class="text-xs" :class="props.wsBadgeClass">{{ props.wsStatus }}</Badge>
+        <HoverCard>
+          <HoverCardTrigger as-child>
+            <Badge variant="outline" class="text-xs" :class="props.wsBadgeClass">{{ props.wsStatus }}</Badge>
+          </HoverCardTrigger>
+          <HoverCardContent class="w-56">
+            <div class="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <ArrowUpFromLine class="h-4 w-4 text-green-600 dark:text-green-300" />
+              Server connection
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">
+              Server WebSocket connectivity status.
+            </p>
+          </HoverCardContent>
+        </HoverCard>
+
         <Badge variant="outline" class="text-xs" :class="phaseBadgeClass">{{ phaseText }}</Badge>
       </div>
     </div>
