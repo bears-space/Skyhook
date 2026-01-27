@@ -140,14 +140,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SidebarProvider class="h-svh">
+  <SidebarProvider class="h-svh overflow-hidden">
     <AppSidebar
       :current-route-name="route.name ? String(route.name) : null"
       :is-dark="isDark"
       @toggle-theme="toggleTheme"
     />
 
-    <SidebarInset class="min-h-svh pb-12 flex flex-col bg-muted/20">
+    <SidebarInset class="h-svh pb-12 flex flex-col bg-muted/20 overflow-hidden">
       <!-- top header bar -->
       <AppHeader
         :route-name="route.name ? String(route.name) : null"
@@ -157,7 +157,7 @@ onBeforeUnmount(() => {
       />
 
       <!-- page content wrapper -->
-      <main class="flex-1">
+      <main class="flex-1 min-h-0 overflow-auto">
         <div class="mx-auto max-w-6xl p-4 md:p-6">
           <RouterView />
         </div>
