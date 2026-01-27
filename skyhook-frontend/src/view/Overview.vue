@@ -6,12 +6,29 @@ import { storeToRefs } from "pinia"
 import { useLaunchpadStore } from "@/stores/launchpad"
 
 const lp = useLaunchpadStore()
-const { countdownText, timer, meta, launch } = storeToRefs(lp)
+const { countdownText, timer, meta, launch, weather } = storeToRefs(lp)
 
 const phase = computed(() => timer.value.phase.value) // "T-" | "T+" | "N/A"
 const phaseMeta = computed(() => meta.value.timer.phase) // { ts, ageMs, isStale }
 
 const launchHold = computed(() => launch.value.hold.value)
+
+const windText = computed(() => {
+  const w = weather.value.windSpeedMs.value
+  const dir = weather.value.windDirDeg.value
+  let dirText = ""
+  if (dir != null) {
+    if (dir >= 337.5 || dir < 22.5) dirText = "N"
+    else if (dir >= 22.5 && dir < 67.5) dirText = "NE"
+    else if (dir >= 67.5 && dir < 112.5) dirText = "E"
+    else if (dir >= 112.5 && dir < 157.5) dirText = "SE"
+    else if (dir >= 157.5 && dir < 202.5) dirText = "S"
+    else if (dir >= 202.5 && dir < 247.5) dirText = "SW"
+    else if (dir >= 247.5 && dir < 292.5) dirText = "W"
+    else if (dir >= 292.5 && dir < 337.5) dirText = "NW"
+  }
+  return w != null && dirText != null ? `${dirText} ${w.toFixed(1)}m/s` : "N/A"
+})
 
 type EventRow = {
   time: string
@@ -83,7 +100,7 @@ const kpis = computed<Kpi[]>(() => ([
   },
   {
     label: "Weather",
-    value: "NE 6.2 m/s",
+    value: windText.value,
     statuses: [
       { tone: "warn", message: "Strong winds" },
       { tone: "neutral", message: "32°C" },

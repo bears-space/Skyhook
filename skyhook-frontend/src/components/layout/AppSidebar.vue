@@ -50,15 +50,18 @@ const emit = defineEmits<{
 
 const items: NavItem[] = [
   { section: null, title: "Overview", name: "Overview", to: "/", icon: LayoutDashboard },
-  { section: "Avionics", title: "Data", name: "data", to: "/data", icon: HardDriveDownload },
-  { section: "Comms", title: "Communications", name: "comms", to: "/comms", icon: RadioTower },
+  { section: "Avionics Data", title: "Telemetry", name: "telemetry", to: "/telemetry", icon: HardDriveDownload },
+  { section: null, title: "System", name: "system", to: "/system", icon: HardDriveDownload },
+  { section: "Comms", title: "Narrowband", name: "narrowband", to: "/narrowband", icon: RadioTower },
+  { section: "Comms", title: "Broadband", name: "broadband", to: "/broadband", icon: RadioTower },
+  { section: "Comms", title: "Wi-Fi Link", name: "wifi-link", to: "/wifi-link", icon: RadioTower },
   { section: "Stations", title: "Ground Station", name: "ground-station", to: "/ground-station", icon: SatelliteDish },
-  { section: "Stations", title: "Pad Station", name: "pad-station", to: "/pad-station", icon: ChevronsLeftRightEllipsis },
+  { section: "Stations", title: "Launch Pad Station", name: "pad-station", to: "/pad-station", icon: ChevronsLeftRightEllipsis },
   { section: "Active flight controls", title: "Engine", name: "engine", to: "/engine", icon: FlameIcon },
   { section: "Active flight controls", title: "Airbrakes", name: "airbrakes", to: "/airbrakes", icon: Settings },
   { section: "Active flight controls", title: "Fins", name: "fins", to: "/fins", icon: GamepadDirectional },
-  { section: "Cameras", title: "On-Board", name: "on-board", to: "/on-board", icon: Cctv },
-  { section: "Cameras", title: "Ground", name: "ground", to: "/ground-cams", icon: Camera },
+  { section: "Avionics Data", title: "On-Board", name: "on-board", to: "/on-board", icon: Cctv },
+  { section: "Avionics Data", title: "Ground", name: "ground", to: "/ground-cams", icon: Camera },
 ]
 
 const grouped = computed(() => {
