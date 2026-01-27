@@ -1,24 +1,19 @@
-<script setup>
-import { cn } from '@/lib/utils';
-import { DialogTitle } from 'radix-vue';
-import { computed } from 'vue';
+<script setup lang="ts">
+import type { DialogTitleProps } from "reka-ui"
+import type { HTMLAttributes } from "vue"
+import { reactiveOmit } from "@vueuse/core"
+import { DialogTitle } from "reka-ui"
+import { cn } from "@/lib/utils"
 
-const props = defineProps({
-  asChild: { type: Boolean, required: false },
-  as: { type: null, required: false },
-  class: { type: null, required: false },
-});
+const props = defineProps<DialogTitleProps & { class?: HTMLAttributes["class"] }>()
 
-const delegatedProps = computed(() => {
-  const { class: _, ...delegated } = props;
-
-  return delegated;
-});
+const delegatedProps = reactiveOmit(props, "class")
 </script>
 
 <template>
   <DialogTitle
-    :class="cn('text-lg font-semibold text-foreground', props.class)"
+    data-slot="sheet-title"
+    :class="cn('text-foreground font-semibold', props.class)"
     v-bind="delegatedProps"
   >
     <slot />
