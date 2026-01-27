@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import logoDark from "@/assets/maxres_light.png"
+import logoLight from "@/assets/maxres_dark.png"
 
 type NavItem = {
   section: string | null
@@ -89,12 +91,17 @@ const grouped = computed(() => {
     items: bySection.get(section) ?? [],
   }))
 })
+
+const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
 </script>
 
 <template>
   <Sidebar variant="inset" collapsible="none">
     <SidebarHeader class="px-2 py-2">
-      <div class="px-2 text-sm font-semibold">Skyhook Interface</div>
+      <div class="flex items-center gap-2 px-2">
+        <img :src="logoSrc" alt="Skyhook logo" class="h-8 w-auto" />
+        <div class="text-sm font-semibold">Skyhook Interface</div>
+      </div>
     </SidebarHeader>
 
     <SidebarContent>
