@@ -4,7 +4,10 @@
  - vuejs
  - websockets
  - multi instance support
+ - DataStore: Pinia
  - Cool visuals
+  - For charts: Apexcharts.js
+  - 3D graphics: Three.js
 
 ## Backend:
  - python
