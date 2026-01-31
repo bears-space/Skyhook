@@ -6,4 +6,4 @@ cd build
 cmake -G "CodeBlocks - Unix Makefiles" ..
 make
 cd ..
-size build/rpi-sx1261
+size build/rpi-llcc68

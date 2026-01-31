@@ -1,42 +1,22 @@
-/*
-   RadioLib Non-Arduino Raspberry Pi Example
-
-   This example shows how to use RadioLib without Arduino.
-   In this case, a Raspberry Pi with WaveShare SX1302 LoRaWAN Hat
-   using the lgpio library
-   https://abyz.me.uk/lg/lgpio.html
-
-   Can be used as a starting point to port RadioLib to any platform!
-   See this API reference page for details on the RadioLib hardware abstraction
-   https://jgromes.github.io/RadioLib/class_hal.html
-
-   For full API reference, see the GitHub Pages
-   https://jgromes.github.io/RadioLib/
-*/
-
-// include the library
 #include <RadioLib.h>
-
-// include the hardware abstraction layer
 #include "hal/RPi/PiHal.h"
 
 // create a new instance of the HAL class
-// use SPI channel 1, because on Waveshare LoRaWAN Hat,
-// the SX1261 CS is connected to CE1
-PiHal* hal = new PiHal(1);
+// use SPI channel 0
+// the LLC68 CS is connected to CE0
+PiHal* hal = new PiHal(0);
 
 // now we can create the radio module
-// pinout corresponds to the Waveshare LoRaWAN Hat
-// NSS pin:   7
-// DIO1 pin:  17
-// NRST pin:  22
-// BUSY pin:  not connected
-SX1261 radio = new Module(hal, 7, 17, 22, RADIOLIB_NC);
+// NSS pin:   08
+// DIO1 pin:  25
+// NRST pin:  23
+// BUSY pin:  24
+LLC68 radio = new Module(hal, 8, 25, 23, 24);
 
 // the entry point for the program
 int main(int argc, char** argv) {
   // initialize just like with Arduino
-  printf("[SX1261] Initializing ... ");
+  printf("[LLC68] Initializing ... ");
   int state = radio.begin();
   if (state != RADIOLIB_ERR_NONE) {
     printf("failed, code %d\n", state);
@@ -44,11 +24,15 @@ int main(int argc, char** argv) {
   }
   printf("success!\n");
 
+  // RXEN pin: 12
+  // TXEN is conncted to dio2
+  radio.setRfSwitchPins(12, RADIOLIB_NC);
+
   // loop forever
   int count = 0;
   for(;;) {
     // send a packet
-    printf("[SX1261] Transmitting packet ... ");
+    printf("[LLC68] Transmitting packet ... ");
     char str[64];
     sprintf(str, "Hello World! #%d", count++);
     state = radio.transmit(str);
