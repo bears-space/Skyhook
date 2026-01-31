@@ -11,13 +11,13 @@ PiHal* hal = new PiHal(0);
 // DIO1 pin:  25
 // NRST pin:  23
 // BUSY pin:  24
-LLC68 radio = new Module(hal, 8, 25, 23, 24);
+LLCC68 radio = new Module(hal, 8, 25, 23, 24);
 
 // the entry point for the program
 int main(int argc, char** argv) {
   // initialize just like with Arduino
-  printf("[LLC68] Initializing ... ");
-  int state = radio.begin();
+  printf("[LLCC68] Initializing ... ");
+  int state = radio.beginFSK();
   if (state != RADIOLIB_ERR_NONE) {
     printf("failed, code %d\n", state);
     return(1);
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   int count = 0;
   for(;;) {
     // send a packet
-    printf("[LLC68] Transmitting packet ... ");
+    printf("[LLCC68] Transmitting packet ... ");
     char str[64];
     sprintf(str, "Hello World! #%d", count++);
     state = radio.transmit(str);
