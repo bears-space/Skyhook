@@ -1,6 +1,8 @@
 #include <RadioLib.h>
 #include "hal/RPi/PiHal.h"
 
+#include <sio_client.h>
+
 // create a new instance of the HAL class
 // use SPI channel 0
 // the LLC68 CS is connected to CE0

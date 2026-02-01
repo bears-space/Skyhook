@@ -11,11 +11,14 @@ project(rpi-llcc68)
 # the following is just an example, yours will likely be different
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/components/radiolib" "${CMAKE_CURRENT_BINARY_DIR}/radiolib")
 
+# add socket io c++ client as static lib
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/components/sioclient" "${CMAKE_CURRENT_BINARY_DIR}/sioclient")
+
 # add the executable
 add_executable(${PROJECT_NAME} main.cpp)
 
-# link both libraries
-target_link_libraries(${PROJECT_NAME} RadioLib lgpio)
+# link libraries
+target_link_libraries(${PROJECT_NAME} RadioLib lgpio sioclient)
 
 # you can also specify RadioLib compile-time flags here
 #target_compile_definitions(RadioLib PUBLIC RADIOLIB_DEBUG_BASIC RADIOLIB_DEBUG_SPI)
