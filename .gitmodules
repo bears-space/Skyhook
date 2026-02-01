@@ -2,5 +2,5 @@
 	path = skyhook-backend/narrowband_comms/components/radiolib
 	url = https://github.com/jgromes/RadioLib.git
 [submodule "skyhook-backend/narrowband_comms/components/socketio"]
-	path = skyhook-backend/narrowband_comms/components/socketio
+	path = skyhook-backend/narrowband_comms/components/sioclient
 	url = https://github.com/socketio/socket.io-client-cpp.git
