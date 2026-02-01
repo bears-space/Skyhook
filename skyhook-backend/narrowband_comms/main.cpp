@@ -38,6 +38,7 @@ PiHal* hal = new PiHal(0);
 // BUSY pin:  24
 LLCC68 radio = new Module(hal, 8, 25, 23, 24);
 
+// TODO: remove the weird c and c++ mix
 // the entry point for the program
 int main(int argc, char** argv) {
 
