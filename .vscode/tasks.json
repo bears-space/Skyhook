@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "dev",
+			"path": "skyhook-frontend",
+			"problemMatcher": [],
+			"label": "Frontend run dev",
+			"detail": "vite --host"
+		},
+		{
+			"type": "shell",
+			"problemMatcher": [],
+			"label": "Backend run dev",
+			"detail": "python app.py",
+			"command": "cd skyhook-backend && python app.py"
+		}
+	]
+}
