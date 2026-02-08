@@ -1,5 +1,8 @@
 from flask import Flask
 from flask_socketio import SocketIO, emit
+from init_db import ensure_schema
+
+ensure_schema()
 
 app = Flask(__name__)
 
