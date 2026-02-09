@@ -1,9 +1,9 @@
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit, join_room, leave_room, ConnectionRefusedError
 from flask_cors import CORS
-import jwt
-import datetime
 from jwt import InvalidTokenError
+
+from auth_service import verify_credentials, generate_jwt, decode_jwt
 
 from init_db import ensure_schema
 from database.cdc_bridge import (
@@ -37,24 +37,26 @@ if cdc_cfg.enabled:
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
-    """Very basic demo login that checks hardcoded credentials and returns a JWT."""
-    payload = request.get_json(silent=True) or {}
-    email = (payload.get("email") or "").strip().lower()
-    password = payload.get("password") or ""
+  """Authenticate against database users and return a JWT with roles."""
+  payload = request.get_json(silent=True) or {}
+  identifier = (payload.get("email") or payload.get("username") or "").strip()
+  password = payload.get("password") or ""
 
-    #TODO: Hardcoded demo creds; replace with real user lookup.
-    if email != "admin@skyhook.local" or password != "letmein":
-        return jsonify({"error": "Invalid credentials"}), 401
+  user, roles = verify_credentials(db_cfg, identifier, password)
+  if not user:
+      return jsonify({"error": "Invalid credentials"}), 401
 
-    now = datetime.datetime.utcnow()
-    exp = now + datetime.timedelta(seconds=app.config["JWT_TTL_SECONDS"])
-    token = jwt.encode(
-        {"sub": email, "iat": now, "exp": exp},
-        app.config["JWT_SECRET"],
-        algorithm="HS256",
-    )
+  token = generate_jwt(app.config["JWT_SECRET"], app.config["JWT_TTL_SECONDS"], user, roles or [])
 
-    return jsonify({"token": token, "user": {"email": email}})
+  return jsonify({
+      "token": token,
+      "user": {
+          "id": user["id"],
+          "username": user["username"],
+          "email": user.get("email"),
+          "roles": roles or [],
+      },
+  })
 
 
 @socketio.on("connect")
@@ -73,13 +75,14 @@ def handle_connect(auth):
         raise ConnectionRefusedError("Missing token")
 
     try:
-        claims = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+        claims = decode_jwt(token, app.config["JWT_SECRET"])
     except InvalidTokenError as exc:
         print(f"Socket connect refused: invalid token ({exc})")
         raise ConnectionRefusedError("Invalid token")
 
     # Stash identity on the request context for later use (rooms, logging, etc.)
     request.environ["skyhook_user"] = claims.get("sub", "unknown")
+    request.environ["skyhook_roles"] = claims.get("roles", [])
     print(f"Socket client connected as {request.environ['skyhook_user']}")
     emit("message", {"data": "Connected to backend"})
 
