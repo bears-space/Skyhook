@@ -1,9 +1,20 @@
-from flask import Flask, jsonify, request
+from functools import wraps
+
+from flask import Flask, jsonify, request, g
 from flask_socketio import SocketIO, emit, join_room, leave_room, ConnectionRefusedError
 from flask_cors import CORS
 from jwt import InvalidTokenError
+from pymysql.err import OperationalError
 
-from auth_service import verify_credentials, generate_jwt, decode_jwt
+from auth_service import (
+    verify_credentials,
+    generate_jwt,
+    decode_jwt,
+    list_users,
+    create_user,
+    update_user,
+    delete_user,
+)
 
 from init_db import ensure_schema
 from database.cdc_bridge import (
@@ -35,6 +46,38 @@ if cdc_cfg.enabled:
     CDCBridge(socketio, db_cfg, cdc_cfg).start()
 
 
+def _get_bearer_token() -> str:
+    header = request.headers.get("Authorization", "")
+    if header.lower().startswith("bearer "):
+        return header.split(" ", 1)[1].strip()
+    return ""
+
+
+def require_auth(admin: bool = False):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            token = _get_bearer_token()
+            if not token:
+                return jsonify({"error": "Missing bearer token"}), 401
+            try:
+                claims = decode_jwt(token, app.config["JWT_SECRET"])
+            except InvalidTokenError as exc:
+                return jsonify({"error": f"Invalid token: {exc}"}), 401
+
+            roles = claims.get("roles", []) or []
+            if admin and "admin" not in roles:
+                return jsonify({"error": "Admin role required"}), 403
+
+            g.jwt_claims = claims
+            g.jwt_token = token
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
   """Authenticate against database users and return a JWT with roles."""
@@ -57,6 +100,77 @@ def api_login():
           "roles": roles or [],
       },
   })
+
+
+@app.route("/api/users", methods=["GET"])
+@require_auth(admin=True)
+def api_users_list():
+    users = list_users(db_cfg)
+    return jsonify({"users": users})
+
+
+@app.route("/api/users", methods=["POST"])
+@require_auth(admin=True)
+def api_users_create():
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    email = (payload.get("email") or "").strip() or None
+    password = payload.get("password") or ""
+    roles = payload.get("roles") or []
+    is_active = bool(payload.get("is_active", True))
+
+    try:
+        user = create_user(db_cfg, username=username, email=email, password=password, roles=roles, is_active=is_active)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except OperationalError as exc:
+        if exc.args and exc.args[0] == 1062:
+            return jsonify({"error": "User with that username or email already exists"}), 409
+        raise
+
+    return jsonify({"user": user}), 201
+
+
+@app.route("/api/users/<int:user_id>", methods=["PATCH"])
+@require_auth(admin=True)
+def api_users_update(user_id: int):
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("username")
+    email = payload.get("email")
+    password = payload.get("password")
+    roles = payload.get("roles")
+    is_active = payload.get("is_active")
+    if is_active is not None:
+        is_active = bool(is_active)
+
+    try:
+        user = update_user(
+            db_cfg,
+            user_id,
+            username=username,
+            email=email,
+            password=password,
+            roles=roles,
+            is_active=is_active,
+        )
+    except OperationalError as exc:
+        if exc.args and exc.args[0] == 1062:
+            return jsonify({"error": "User with that username or email already exists"}), 409
+        raise
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"user": user})
+
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@require_auth(admin=True)
+def api_users_delete(user_id: int):
+    deleted = delete_user(db_cfg, user_id)
+    if not deleted:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"status": "deleted"})
 
 
 @socketio.on("connect")

@@ -6,6 +6,7 @@ import { setSocketAuthToken, socket } from "@/socket"
 const AUTH_STORAGE_KEY = "skyhook-auth"
 const AUTH_EMAIL_STORAGE_KEY = "skyhook-auth-email"
 const AUTH_TOKEN_STORAGE_KEY = "skyhook-auth-token"
+const AUTH_ROLES_STORAGE_KEY = "skyhook-auth-roles"
 const API_BASE =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? "http://localhost:3000" : "")
@@ -33,14 +34,35 @@ export const useAuthStore = defineStore("auth", () => {
   const userName = ref("Skyhook Administrator")
   const userEmail = ref("username@tu-berlin.de")
   const token = ref<string | null>(null)
+  const userRoles = ref<string[]>([])
   const loginLoading = ref(false)
   const loginError = ref<string | null>(null)
   const hydrated = ref(false)
+
+  const normalizeRoles = (roles: unknown): string[] => {
+    if (!Array.isArray(roles)) return []
+    return roles
+      .map((r) => (typeof r === "string" ? r.toLowerCase() : String(r).toLowerCase()))
+      .filter(Boolean)
+  }
+
+  const decodeRolesFromToken = (jwtToken: string | null): string[] => {
+    if (!jwtToken) return []
+    try {
+      const [, payload] = jwtToken.split(".")
+      if (!payload) return []
+      const json = JSON.parse(atob(payload))
+      return normalizeRoles(json.roles)
+    } catch {
+      return []
+    }
+  }
 
   const initFromStorage = () => {
     if (hydrated.value) return
     const storedAuth = localStorage.getItem(AUTH_STORAGE_KEY)
     const storedToken = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+    const storedRoles = localStorage.getItem(AUTH_ROLES_STORAGE_KEY)
     if (storedAuth === "true" && storedToken) {
       isAuthenticated.value = true
       token.value = storedToken
@@ -48,6 +70,15 @@ export const useAuthStore = defineStore("auth", () => {
       if (savedEmail) {
         userEmail.value = savedEmail
         userName.value = deriveNameFromEmail(savedEmail)
+      }
+      if (storedRoles) {
+        try {
+          userRoles.value = normalizeRoles(JSON.parse(storedRoles))
+        } catch {
+          userRoles.value = []
+        }
+      } else {
+        userRoles.value = decodeRolesFromToken(storedToken)
       }
       // ensure socket auth is hydrated for reconnect
       setSocketAuthToken(storedToken)
@@ -87,12 +118,16 @@ export const useAuthStore = defineStore("auth", () => {
 
       isAuthenticated.value = true
       userEmail.value = email
-      userName.value = deriveNameFromEmail(email)
+      userName.value = data.user?.username || deriveNameFromEmail(email)
+      userRoles.value = normalizeRoles(data.user?.roles)
       token.value = receivedToken
       setSocketAuthToken(receivedToken)
       if (!socket.connected) {
         socket.connect()
       }
+
+      // Always persist roles for faster hydration; token/email still respect "remember"
+      localStorage.setItem(AUTH_ROLES_STORAGE_KEY, JSON.stringify(userRoles.value))
 
       if (remember) {
         localStorage.setItem(AUTH_STORAGE_KEY, "true")
@@ -122,9 +157,11 @@ export const useAuthStore = defineStore("auth", () => {
   const signOut = () => {
     isAuthenticated.value = false
     token.value = null
+    userRoles.value = []
     localStorage.removeItem(AUTH_STORAGE_KEY)
     localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY)
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    localStorage.removeItem(AUTH_ROLES_STORAGE_KEY)
     setSocketAuthToken(undefined)
     socket.disconnect()
     notify({ title: "Signed out", description: "Session closed.", variant: "info" })
@@ -135,6 +172,7 @@ export const useAuthStore = defineStore("auth", () => {
     userName,
     userEmail,
     token,
+    userRoles,
     loginLoading,
     loginError,
     hydrated,

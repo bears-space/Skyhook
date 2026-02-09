@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS user_roles (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Seed base roles
+INSERT INTO roles (name, description)
+VALUES
+  ('admin', 'Full administrative access'),
+  ('engineer', 'Engineering controls and settings'),
+  ('operator', 'Operational access')
+ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description);
+
 
 -- =========================
 -- Telemetry: Sensors / Variables / Measurements
