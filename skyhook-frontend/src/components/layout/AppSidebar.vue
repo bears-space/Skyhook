@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from "vue"
 import { computed } from "vue"
-import { RouterLink } from "vue-router"
+import { RouterLink, useRouter } from "vue-router"
 import {
   Camera,
   Cctv,
@@ -13,8 +13,10 @@ import {
   Moon,
   RadioTower,
   SatelliteDish,
+  Server,
   Settings,
   Sun,
+  User,
 } from "lucide-vue-next"
 import {
   Sidebar,
@@ -28,6 +30,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import logoDark from "@/assets/maxres_light.png"
@@ -49,6 +59,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "toggle-theme"): void
 }>()
+
+const router = useRouter()
 
 const items: NavItem[] = [
   { section: null, title: "Overview", name: "Overview", to: "/", icon: LayoutDashboard },
@@ -146,11 +158,25 @@ const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
             <Sun v-if="props.isDark" class="h-4 w-4" />
             <Moon v-else class="h-4 w-4" />
           </Button>
-          <RouterLink to="/settings">
-            <Button variant="ghost" size="icon" aria-label="Settings" title="Settings">
-              <Settings class="h-4 w-4" />
-            </Button>
-          </RouterLink>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon" aria-label="Settings" title="Settings">
+                <Settings class="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" class="w-48">
+              <DropdownMenuLabel>Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="router.push({ path: '/settings/user' })">
+                <User class="h-4 w-4 text-muted-foreground" />
+                <span>User</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem @click="router.push({ path: '/settings/system' })">
+                <Server class="h-4 w-4 text-muted-foreground" />
+                <span>System</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </SidebarFooter>

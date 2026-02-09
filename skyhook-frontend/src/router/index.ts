@@ -3,6 +3,8 @@ import { h } from "vue"
 import Overview from "@/view/Overview.vue"
 import Narrowband from "@/view/Narrowband.vue"
 import Broadband from "@/view/Broadband.vue"
+import SettingsUserView from "@/view/SettingsUser.vue"
+import SettingsSystemView from "@/view/SettingsSystem.vue"
 
 const PlaceholderView = {
   name: "PlaceholderView",
@@ -27,7 +29,9 @@ const routes: RouteRecordRaw[] = [
   { path: "/fins", name: "fins", component: PlaceholderView },
   { path: "/on-board", name: "on-board", component: PlaceholderView },
   { path: "/ground-cams", name: "ground", component: PlaceholderView },
-  { path: "/settings", name: "settings", component: PlaceholderView },
+  { path: "/settings", redirect: "/settings/user" },
+  { path: "/settings/user", name: "settings-user", component: SettingsUserView },
+  { path: "/settings/system", name: "settings-system", component: SettingsSystemView },
 ]
 
 export const router = createRouter({
