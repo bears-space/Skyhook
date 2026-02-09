@@ -138,6 +138,17 @@ def _decode_value_from_row(row: Dict[str, Any]) -> Tuple[Optional[str], Any]:
     return None, None
 
 
+def _load_variable_key_map(db_cfg: DBConfig) -> Dict[int, str]:
+    conn = _db_conn_read(db_cfg)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, `key` FROM variables")
+            rows = cur.fetchall()
+            return {int(r[0]): str(r[1]) for r in rows}
+    finally:
+        conn.close()
+
+
 def get_latest_snapshot(
     db_cfg: DBConfig,
     sensor_id: int,
@@ -153,22 +164,24 @@ def get_latest_snapshot(
     if variable_ids:
         placeholders = ",".join(["%s"] * len(variable_ids))
         q = f"""
-            SELECT id, ts, sensor_id, variable_id, value_type,
-                   value_num, value_int, value_bool, value_text, value_json, value_blob
-            FROM measurements
-            WHERE sensor_id = %s AND variable_id IN ({placeholders})
-            ORDER BY ts DESC
+            SELECT m.id, m.ts, m.sensor_id, m.variable_id, v.`key` AS variable_key, m.value_type,
+                   m.value_num, m.value_int, m.value_bool, m.value_text, m.value_json, m.value_blob
+            FROM measurements m
+            JOIN variables v ON v.id = m.variable_id
+            WHERE m.sensor_id = %s AND m.variable_id IN ({placeholders})
+            ORDER BY m.ts DESC
             LIMIT %s
         """
         params.extend([int(x) for x in variable_ids])
         params.append(limit_scan)
     else:
         q = """
-            SELECT id, ts, sensor_id, variable_id, value_type,
-                   value_num, value_int, value_bool, value_text, value_json, value_blob
-            FROM measurements
-            WHERE sensor_id = %s
-            ORDER BY ts DESC
+            SELECT m.id, m.ts, m.sensor_id, m.variable_id, v.`key` AS variable_key, m.value_type,
+                   m.value_num, m.value_int, m.value_bool, m.value_text, m.value_json, m.value_blob
+            FROM measurements m
+            JOIN variables v ON v.id = m.variable_id
+            WHERE m.sensor_id = %s
+            ORDER BY m.ts DESC
             LIMIT %s
         """
         params.append(limit_scan)
@@ -200,6 +213,7 @@ def get_latest_snapshot(
                     "ts": ts_str,
                     "sensor_id": int(row.get("sensor_id")),
                     "variable_id": vid,
+                    "variable_key": row.get("variable_key"),
                     "value_type": vt,
                     "value": v,
                 }
@@ -207,6 +221,17 @@ def get_latest_snapshot(
         conn.close()
 
     return {"sensor_id": sensor_id, "latest": list(latest.values())}
+
+
+def get_sensor_ids(db_cfg: DBConfig) -> List[int]:
+    conn = _db_conn_read(db_cfg)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM sensors ORDER BY id ASC")
+            rows = cur.fetchall()
+            return [int(r[0]) for r in rows]
+    finally:
+        conn.close()
 
 
 class CDCBridge:
@@ -230,6 +255,8 @@ class CDCBridge:
         self._queue_lock = threading.Lock()
 
         self._reader_thread: Optional[threading.Thread] = None
+        self._var_key_cache: Dict[int, str] = _load_variable_key_map(db_cfg)
+        self._var_key_lock = threading.Lock()
 
     def start(self) -> None:
         with self._start_lock:
@@ -268,6 +295,17 @@ class CDCBridge:
             return None
 
         vt, v = _decode_value_from_row(row)
+        variable_key = None
+        try:
+            variable_key = self._var_key_cache.get(int(variable_id))
+            if variable_key is None:
+                with self._var_key_lock:
+                    variable_key = self._var_key_cache.get(int(variable_id))
+                    if variable_key is None:
+                        self._var_key_cache = _load_variable_key_map(self.db_cfg)
+                        variable_key = self._var_key_cache.get(int(variable_id))
+        except Exception:
+            variable_key = None
 
         ts_val = row.get("ts")
         ts_str = (
@@ -281,6 +319,7 @@ class CDCBridge:
             "ts": ts_str,
             "sensor_id": int(sensor_id),
             "variable_id": int(variable_id),
+            "variable_key": variable_key,
             "value_type": vt,
             "value": v,
         }

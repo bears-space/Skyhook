@@ -53,6 +53,10 @@ def utc_now_dt3() -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(dt.microsecond/1000):03d}"
 
 
+def clamp(n: float, min_v: float, max_v: float) -> float:
+    return max(min_v, min(max_v, n))
+
+
 # -----------------------------
 # Variable definitions
 # -----------------------------
@@ -96,6 +100,23 @@ class SimState:
     gps_fix: int = 0  # 0=no, 2=2D, 3=3D
     hdop: float = 99.0
 
+    # launchpad-ish
+    launch_t0_epoch_ms: Optional[int] = None
+    launch_hold: bool = False
+    launch_hold_reason: str = ""
+
+    # weather-ish
+    weather_temp_c: float = 18.0
+    weather_humidity_pct: float = 55.0
+    weather_pressure_hpa: float = 1012.0
+    weather_wind_speed_ms: float = 4.0
+    weather_wind_dir_deg: float = 180.0
+    weather_cloud_cover_pct: float = 40.0
+
+    # comms-ish
+    comms_notes: str = ""
+    epoch_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+
     def t(self) -> float:
         return time.monotonic() - self.t0
 
@@ -109,6 +130,7 @@ def update_sim(state: SimState, dt: float) -> None:
     dt is seconds (e.g. 0.300).
     """
     t = state.t()
+    state.epoch_ms = int(time.time() * 1000)
 
     # phase transitions (simple timeline)
     # 0-3s idle, 3-8s countdown, 8-28s ascent, 28-34s coast, 34-80s descent, then landed
@@ -206,6 +228,68 @@ def update_sim(state: SimState, dt: float) -> None:
     state.lat += random.gauss(0.0, 0.000001)
     state.lon += random.gauss(0.0, 0.000001)
 
+    # -----------------------------
+    # launchpad-ish (countdown + hold)
+    # -----------------------------
+    if state.launch_t0_epoch_ms is None:
+        state.launch_t0_epoch_ms = state.epoch_ms + 10 * 60_000
+        state.launch_hold = False
+        state.launch_hold_reason = ""
+
+    if not state.launch_hold and random.random() < 0.02:
+        state.launch_hold = True
+        state.launch_hold_reason = random.choice(["Range check", "Wind constraint", "Comms verify"])
+    elif state.launch_hold and random.random() < 0.08:
+        state.launch_hold = False
+        state.launch_hold_reason = ""
+
+    if state.launch_hold and state.launch_t0_epoch_ms is not None:
+        state.launch_t0_epoch_ms += int(dt * 1000)
+
+    if state.launch_t0_epoch_ms is not None and state.epoch_ms - state.launch_t0_epoch_ms > 30_000:
+        state.launch_t0_epoch_ms = state.epoch_ms + 10 * 60_000
+        state.launch_hold = False
+        state.launch_hold_reason = ""
+
+    # -----------------------------
+    # weather-ish slow drift
+    # -----------------------------
+    state.weather_temp_c = clamp(state.weather_temp_c + random.gauss(0.0, 0.03), -20, 40)
+    state.weather_humidity_pct = clamp(state.weather_humidity_pct + random.gauss(0.0, 0.2), 5, 100)
+    state.weather_pressure_hpa = clamp(state.weather_pressure_hpa + random.gauss(0.0, 0.05), 930, 1060)
+    state.weather_wind_speed_ms = clamp(state.weather_wind_speed_ms + random.gauss(0.0, 0.15), 0, 35)
+    state.weather_wind_dir_deg = (state.weather_wind_dir_deg + random.gauss(0.0, 1.5)) % 360
+    state.weather_cloud_cover_pct = clamp(state.weather_cloud_cover_pct + random.gauss(0.0, 0.8), 0, 100)
+
+
+def comms_quality(t: float, period: float, phase: float = 0.0) -> float:
+    # 0..1
+    return 0.5 + 0.5 * math.sin((t + phase) / period)
+
+
+def comms_health(q: float) -> str:
+    if q < 0.2:
+        return "offline"
+    if q < 0.45:
+        return "degraded"
+    return "ok"
+
+
+def comms_state(t: float, offset: float = 0.0) -> str:
+    states = ["idle", "tx", "rx", "locked", "acquiring"]
+    idx = int((t + offset) / 8.0) % len(states)
+    return states[idx]
+
+
+def comms_modcod(q: float) -> str:
+    if q < 0.3:
+        return "BPSK 1/2"
+    if q < 0.55:
+        return "QPSK 1/2"
+    if q < 0.75:
+        return "QPSK 3/4"
+    return "16QAM 1/2"
+
 
 # -----------------------------
 # DB layer
@@ -299,7 +383,44 @@ class DB:
 def build_variables() -> List[VarDef]:
     # Define your variables here (the “list of variables”).
     # data_type must match your schema + triggers: 'num','int','bool','text','json','blob'
-    return [
+    def q_nb_up(s: SimState) -> float:
+        return comms_quality(s.t(), 18.0, 0.0)
+
+    def q_nb_down(s: SimState) -> float:
+        return comms_quality(s.t(), 22.0, 2.5)
+
+    def q_bb_down(s: SimState) -> float:
+        return comms_quality(s.t(), 14.0, 1.0)
+
+    def nb_up_rate(s: SimState) -> float:
+        return 60_000 + 90_000 * q_nb_up(s) + random.gauss(0.0, 2000)
+
+    def nb_down_rate(s: SimState) -> float:
+        return 90_000 + 120_000 * q_nb_down(s) + random.gauss(0.0, 2500)
+
+    def bb_down_rate(s: SimState) -> float:
+        return 3_500_000 + 2_500_000 * q_bb_down(s) + random.gauss(0.0, 50_000)
+
+    def precip_mm(s: SimState) -> float:
+        cc = s.weather_cloud_cover_pct
+        base = max(0.0, (cc - 70.0) / 12.0)
+        return round(min(12.0, base), 2)
+
+    def visibility_m(s: SimState) -> float:
+        cc = s.weather_cloud_cover_pct
+        return round(clamp(20_000 - cc * 120 + random.gauss(0.0, 200), 200, 20_000), 0)
+
+    def condition(s: SimState) -> str:
+        p = precip_mm(s)
+        if p > 0.4:
+            return "Rain"
+        if s.weather_cloud_cover_pct > 70:
+            return "Cloudy"
+        if s.weather_wind_speed_ms > 12:
+            return "Windy"
+        return "Clear"
+
+    vars: List[VarDef] = [
         VarDef(
             key="altitude_m",
             name="Altitude",
@@ -386,6 +507,612 @@ def build_variables() -> List[VarDef]:
             },
         ),
     ]
+
+    # -----------------------------
+    # Launchpad / weather variables (DB-backed)
+    # -----------------------------
+    vars.extend(
+        [
+            VarDef(
+                key="lp.weather.temperatureC",
+                name="Weather Temp",
+                unit="°C",
+                data_type="num",
+                desc="Ambient temperature",
+                gen=lambda s: round(s.weather_temp_c, 2),
+            ),
+            VarDef(
+                key="lp.weather.humidityPct",
+                name="Humidity",
+                unit="%",
+                data_type="num",
+                desc="Relative humidity",
+                gen=lambda s: round(s.weather_humidity_pct, 1),
+            ),
+            VarDef(
+                key="lp.weather.pressureHpa",
+                name="Pressure",
+                unit="hPa",
+                data_type="num",
+                desc="Barometric pressure",
+                gen=lambda s: round(s.weather_pressure_hpa, 2),
+            ),
+            VarDef(
+                key="lp.weather.windSpeedMs",
+                name="Wind Speed",
+                unit="m/s",
+                data_type="num",
+                desc="Surface wind speed",
+                gen=lambda s: round(s.weather_wind_speed_ms, 2),
+            ),
+            VarDef(
+                key="lp.weather.windGustMs",
+                name="Wind Gust",
+                unit="m/s",
+                data_type="num",
+                desc="Wind gust speed",
+                gen=lambda s: round(s.weather_wind_speed_ms + random.uniform(0.5, 4.0), 2),
+            ),
+            VarDef(
+                key="lp.weather.windDirDeg",
+                name="Wind Direction",
+                unit="deg",
+                data_type="num",
+                desc="Wind direction (deg)",
+                gen=lambda s: round(s.weather_wind_dir_deg, 1),
+            ),
+            VarDef(
+                key="lp.weather.precipitationMm",
+                name="Precipitation",
+                unit="mm",
+                data_type="num",
+                desc="Precipitation rate",
+                gen=lambda s: precip_mm(s),
+            ),
+            VarDef(
+                key="lp.weather.cloudCoverPct",
+                name="Cloud Cover",
+                unit="%",
+                data_type="num",
+                desc="Cloud cover",
+                gen=lambda s: round(s.weather_cloud_cover_pct, 0),
+            ),
+            VarDef(
+                key="lp.weather.visibilityM",
+                name="Visibility",
+                unit="m",
+                data_type="num",
+                desc="Estimated visibility",
+                gen=lambda s: visibility_m(s),
+            ),
+            VarDef(
+                key="lp.weather.lightningRisk",
+                name="Lightning Risk",
+                unit=None,
+                data_type="bool",
+                desc="Lightning risk flag",
+                gen=lambda s: 1 if precip_mm(s) > 1.0 and s.weather_cloud_cover_pct > 80 and random.random() < 0.1 else 0,
+            ),
+            VarDef(
+                key="lp.weather.condition",
+                name="Weather Condition",
+                unit=None,
+                data_type="text",
+                desc="Weather condition",
+                gen=lambda s: condition(s),
+            ),
+            VarDef(
+                key="lp.launch.t0EpochMs",
+                name="Launch T0",
+                unit="ms",
+                data_type="int",
+                desc="Planned T0 epoch milliseconds",
+                gen=lambda s: int(s.launch_t0_epoch_ms or s.epoch_ms),
+            ),
+            VarDef(
+                key="lp.launch.hold",
+                name="Launch Hold",
+                unit=None,
+                data_type="bool",
+                desc="Launch hold flag",
+                gen=lambda s: 1 if s.launch_hold else 0,
+            ),
+            VarDef(
+                key="lp.launch.holdReason",
+                name="Hold Reason",
+                unit=None,
+                data_type="text",
+                desc="Launch hold reason",
+                gen=lambda s: s.launch_hold_reason or "",
+            ),
+            VarDef(
+                key="lp.status.source",
+                name="Launchpad Source",
+                unit=None,
+                data_type="text",
+                desc="Launchpad source",
+                gen=lambda s: "sim",
+            ),
+            VarDef(
+                key="lp.status.health",
+                name="Launchpad Health",
+                unit=None,
+                data_type="text",
+                desc="Launchpad health",
+                gen=lambda s: "ok" if not s.launch_hold else "degraded",
+            ),
+        ]
+    )
+
+    # -----------------------------
+    # Comms variables (DB-backed)
+    # -----------------------------
+    vars.extend(
+        [
+            # system
+            VarDef(
+                key="comms.system.source",
+                name="Comms Source",
+                unit=None,
+                data_type="text",
+                desc="Comms telemetry source",
+                gen=lambda s: "sim",
+            ),
+            VarDef(
+                key="comms.system.notes",
+                name="Comms Notes",
+                unit=None,
+                data_type="text",
+                desc="Comms notes",
+                gen=lambda s: s.comms_notes or "Nominal",
+            ),
+            # NB uplink
+            VarDef(
+                key="comms.nb.up.health",
+                name="NB Up Health",
+                unit=None,
+                data_type="text",
+                desc="NB uplink health",
+                gen=lambda s: comms_health(q_nb_up(s)),
+            ),
+            VarDef(
+                key="comms.nb.up.state",
+                name="NB Up State",
+                unit=None,
+                data_type="text",
+                desc="NB uplink state",
+                gen=lambda s: comms_state(s.t(), 0.0),
+            ),
+            VarDef(
+                key="comms.nb.up.rateBps",
+                name="NB Up Rate",
+                unit="b/s",
+                data_type="num",
+                desc="NB uplink rate",
+                gen=lambda s: round(nb_up_rate(s), 0),
+            ),
+            VarDef(
+                key="comms.nb.up.rateAvgBps",
+                name="NB Up Rate Avg",
+                unit="b/s",
+                data_type="num",
+                desc="NB uplink avg rate",
+                gen=lambda s: round(60_000 + 90_000 * comms_quality(s.t(), 45.0, 0.0), 0),
+            ),
+            VarDef(
+                key="comms.nb.up.utilPct",
+                name="NB Up Util",
+                unit="%",
+                data_type="num",
+                desc="NB uplink utilization",
+                gen=lambda s: round(clamp(nb_up_rate(s) / 200_000 * 100.0, 0, 100), 1),
+            ),
+            VarDef(
+                key="comms.nb.up.rssiDbm",
+                name="NB Up RSSI",
+                unit="dBm",
+                data_type="num",
+                desc="NB uplink RSSI",
+                gen=lambda s: round(-95.0 + 20.0 * q_nb_up(s) + random.gauss(0.0, 1.2), 1),
+            ),
+            VarDef(
+                key="comms.nb.up.snrDb",
+                name="NB Up SNR",
+                unit="dB",
+                data_type="num",
+                desc="NB uplink SNR",
+                gen=lambda s: round(2.0 + 10.0 * q_nb_up(s) + random.gauss(0.0, 0.3), 1),
+            ),
+            VarDef(
+                key="comms.nb.up.ber",
+                name="NB Up BER",
+                unit=None,
+                data_type="num",
+                desc="NB uplink BER",
+                gen=lambda s: round(max(1e-6, (1.0 - q_nb_up(s)) * 1e-3), 6),
+            ),
+            VarDef(
+                key="comms.nb.up.per",
+                name="NB Up PER",
+                unit="%",
+                data_type="num",
+                desc="NB uplink PER",
+                gen=lambda s: round((1.0 - q_nb_up(s)) * 2.5, 2),
+            ),
+            VarDef(
+                key="comms.nb.up.packetLossPct",
+                name="NB Up Packet Loss",
+                unit="%",
+                data_type="num",
+                desc="NB uplink packet loss",
+                gen=lambda s: round((1.0 - q_nb_up(s)) * 5.0, 2),
+            ),
+            VarDef(
+                key="comms.nb.up.latencyMs",
+                name="NB Up Latency",
+                unit="ms",
+                data_type="num",
+                desc="NB uplink latency",
+                gen=lambda s: round(120.0 + (1.0 - q_nb_up(s)) * 180.0, 0),
+            ),
+            VarDef(
+                key="comms.nb.up.jitterMs",
+                name="NB Up Jitter",
+                unit="ms",
+                data_type="num",
+                desc="NB uplink jitter",
+                gen=lambda s: round(6.0 + (1.0 - q_nb_up(s)) * 18.0, 0),
+            ),
+            VarDef(
+                key="comms.nb.up.freqHz",
+                name="NB Up Frequency",
+                unit="Hz",
+                data_type="num",
+                desc="NB uplink center frequency",
+                gen=lambda s: 433_920_000,
+            ),
+            VarDef(
+                key="comms.nb.up.bandwidthHz",
+                name="NB Up Bandwidth",
+                unit="Hz",
+                data_type="num",
+                desc="NB uplink bandwidth",
+                gen=lambda s: 125_000,
+            ),
+            VarDef(
+                key="comms.nb.up.modcod",
+                name="NB Up Mod/Cod",
+                unit=None,
+                data_type="text",
+                desc="NB uplink modulation/coding",
+                gen=lambda s: comms_modcod(q_nb_up(s)),
+            ),
+            VarDef(
+                key="comms.nb.up.lastTxEpochMs",
+                name="NB Up Last Tx",
+                unit="ms",
+                data_type="int",
+                desc="NB uplink last TX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(0, 300)),
+            ),
+            VarDef(
+                key="comms.nb.up.lastRxEpochMs",
+                name="NB Up Last Rx",
+                unit="ms",
+                data_type="int",
+                desc="NB uplink last RX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(50, 500)),
+            ),
+            # NB downlink
+            VarDef(
+                key="comms.nb.down.health",
+                name="NB Down Health",
+                unit=None,
+                data_type="text",
+                desc="NB downlink health",
+                gen=lambda s: comms_health(q_nb_down(s)),
+            ),
+            VarDef(
+                key="comms.nb.down.state",
+                name="NB Down State",
+                unit=None,
+                data_type="text",
+                desc="NB downlink state",
+                gen=lambda s: comms_state(s.t(), 3.0),
+            ),
+            VarDef(
+                key="comms.nb.down.rateBps",
+                name="NB Down Rate",
+                unit="b/s",
+                data_type="num",
+                desc="NB downlink rate",
+                gen=lambda s: round(nb_down_rate(s), 0),
+            ),
+            VarDef(
+                key="comms.nb.down.rateAvgBps",
+                name="NB Down Rate Avg",
+                unit="b/s",
+                data_type="num",
+                desc="NB downlink avg rate",
+                gen=lambda s: round(90_000 + 120_000 * comms_quality(s.t(), 55.0, 2.0), 0),
+            ),
+            VarDef(
+                key="comms.nb.down.utilPct",
+                name="NB Down Util",
+                unit="%",
+                data_type="num",
+                desc="NB downlink utilization",
+                gen=lambda s: round(clamp(nb_down_rate(s) / 250_000 * 100.0, 0, 100), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.rsrpDbm",
+                name="NB Down RSRP",
+                unit="dBm",
+                data_type="num",
+                desc="NB downlink RSRP",
+                gen=lambda s: round(-110.0 + 25.0 * q_nb_down(s) + random.gauss(0.0, 1.0), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.rsrqDb",
+                name="NB Down RSRQ",
+                unit="dB",
+                data_type="num",
+                desc="NB downlink RSRQ",
+                gen=lambda s: round(-15.0 + 8.0 * q_nb_down(s) + random.gauss(0.0, 0.5), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.sinrDb",
+                name="NB Down SINR",
+                unit="dB",
+                data_type="num",
+                desc="NB downlink SINR",
+                gen=lambda s: round(-2.0 + 12.0 * q_nb_down(s) + random.gauss(0.0, 0.4), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.rssiDbm",
+                name="NB Down RSSI",
+                unit="dBm",
+                data_type="num",
+                desc="NB downlink RSSI",
+                gen=lambda s: round(-92.0 + 18.0 * q_nb_down(s) + random.gauss(0.0, 1.2), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.snrDb",
+                name="NB Down SNR",
+                unit="dB",
+                data_type="num",
+                desc="NB downlink SNR",
+                gen=lambda s: round(2.0 + 9.0 * q_nb_down(s) + random.gauss(0.0, 0.3), 1),
+            ),
+            VarDef(
+                key="comms.nb.down.ber",
+                name="NB Down BER",
+                unit=None,
+                data_type="num",
+                desc="NB downlink BER",
+                gen=lambda s: round(max(1e-6, (1.0 - q_nb_down(s)) * 1.2e-3), 6),
+            ),
+            VarDef(
+                key="comms.nb.down.per",
+                name="NB Down PER",
+                unit="%",
+                data_type="num",
+                desc="NB downlink PER",
+                gen=lambda s: round((1.0 - q_nb_down(s)) * 3.0, 2),
+            ),
+            VarDef(
+                key="comms.nb.down.packetLossPct",
+                name="NB Down Packet Loss",
+                unit="%",
+                data_type="num",
+                desc="NB downlink packet loss",
+                gen=lambda s: round((1.0 - q_nb_down(s)) * 6.0, 2),
+            ),
+            VarDef(
+                key="comms.nb.down.latencyMs",
+                name="NB Down Latency",
+                unit="ms",
+                data_type="num",
+                desc="NB downlink latency",
+                gen=lambda s: round(140.0 + (1.0 - q_nb_down(s)) * 200.0, 0),
+            ),
+            VarDef(
+                key="comms.nb.down.jitterMs",
+                name="NB Down Jitter",
+                unit="ms",
+                data_type="num",
+                desc="NB downlink jitter",
+                gen=lambda s: round(8.0 + (1.0 - q_nb_down(s)) * 18.0, 0),
+            ),
+            VarDef(
+                key="comms.nb.down.freqHz",
+                name="NB Down Frequency",
+                unit="Hz",
+                data_type="num",
+                desc="NB downlink center frequency",
+                gen=lambda s: 433_920_000,
+            ),
+            VarDef(
+                key="comms.nb.down.bandwidthHz",
+                name="NB Down Bandwidth",
+                unit="Hz",
+                data_type="num",
+                desc="NB downlink bandwidth",
+                gen=lambda s: 125_000,
+            ),
+            VarDef(
+                key="comms.nb.down.modcod",
+                name="NB Down Mod/Cod",
+                unit=None,
+                data_type="text",
+                desc="NB downlink modulation/coding",
+                gen=lambda s: comms_modcod(q_nb_down(s)),
+            ),
+            VarDef(
+                key="comms.nb.down.lastTxEpochMs",
+                name="NB Down Last Tx",
+                unit="ms",
+                data_type="int",
+                desc="NB downlink last TX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(0, 500)),
+            ),
+            VarDef(
+                key="comms.nb.down.lastRxEpochMs",
+                name="NB Down Last Rx",
+                unit="ms",
+                data_type="int",
+                desc="NB downlink last RX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(0, 400)),
+            ),
+            # BB downlink
+            VarDef(
+                key="comms.bb.down.health",
+                name="BB Down Health",
+                unit=None,
+                data_type="text",
+                desc="BB downlink health",
+                gen=lambda s: comms_health(q_bb_down(s)),
+            ),
+            VarDef(
+                key="comms.bb.down.state",
+                name="BB Down State",
+                unit=None,
+                data_type="text",
+                desc="BB downlink state",
+                gen=lambda s: comms_state(s.t(), 1.0),
+            ),
+            VarDef(
+                key="comms.bb.down.rateBps",
+                name="BB Down Rate",
+                unit="b/s",
+                data_type="num",
+                desc="BB downlink rate",
+                gen=lambda s: round(bb_down_rate(s), 0),
+            ),
+            VarDef(
+                key="comms.bb.down.rateAvgBps",
+                name="BB Down Rate Avg",
+                unit="b/s",
+                data_type="num",
+                desc="BB downlink avg rate",
+                gen=lambda s: round(3_500_000 + 2_200_000 * comms_quality(s.t(), 35.0, 1.0), 0),
+            ),
+            VarDef(
+                key="comms.bb.down.utilPct",
+                name="BB Down Util",
+                unit="%",
+                data_type="num",
+                desc="BB downlink utilization",
+                gen=lambda s: round(clamp(bb_down_rate(s) / 8_000_000 * 100.0, 0, 100), 1),
+            ),
+            VarDef(
+                key="comms.bb.down.rssiDbm",
+                name="BB Down RSSI",
+                unit="dBm",
+                data_type="num",
+                desc="BB downlink RSSI",
+                gen=lambda s: round(-70.0 + 10.0 * q_bb_down(s) + random.gauss(0.0, 1.0), 1),
+            ),
+            VarDef(
+                key="comms.bb.down.snrDb",
+                name="BB Down SNR",
+                unit="dB",
+                data_type="num",
+                desc="BB downlink SNR",
+                gen=lambda s: round(8.0 + 12.0 * q_bb_down(s) + random.gauss(0.0, 0.4), 1),
+            ),
+            VarDef(
+                key="comms.bb.down.mcs",
+                name="BB Down MCS",
+                unit=None,
+                data_type="int",
+                desc="BB downlink MCS index",
+                gen=lambda s: int(3 + 6 * q_bb_down(s)),
+            ),
+            VarDef(
+                key="comms.bb.down.phyRateBps",
+                name="BB Down PHY Rate",
+                unit="b/s",
+                data_type="num",
+                desc="BB downlink PHY rate",
+                gen=lambda s: round(bb_down_rate(s) * 1.3, 0),
+            ),
+            VarDef(
+                key="comms.bb.down.per",
+                name="BB Down PER",
+                unit="%",
+                data_type="num",
+                desc="BB downlink PER",
+                gen=lambda s: round((1.0 - q_bb_down(s)) * 1.5, 2),
+            ),
+            VarDef(
+                key="comms.bb.down.packetLossPct",
+                name="BB Down Packet Loss",
+                unit="%",
+                data_type="num",
+                desc="BB downlink packet loss",
+                gen=lambda s: round((1.0 - q_bb_down(s)) * 3.0, 2),
+            ),
+            VarDef(
+                key="comms.bb.down.latencyMs",
+                name="BB Down Latency",
+                unit="ms",
+                data_type="num",
+                desc="BB downlink latency",
+                gen=lambda s: round(40.0 + (1.0 - q_bb_down(s)) * 40.0, 0),
+            ),
+            VarDef(
+                key="comms.bb.down.jitterMs",
+                name="BB Down Jitter",
+                unit="ms",
+                data_type="num",
+                desc="BB downlink jitter",
+                gen=lambda s: round(2.0 + (1.0 - q_bb_down(s)) * 6.0, 0),
+            ),
+            VarDef(
+                key="comms.bb.down.freqHz",
+                name="BB Down Frequency",
+                unit="Hz",
+                data_type="num",
+                desc="BB downlink center frequency",
+                gen=lambda s: 5_800_000_000,
+            ),
+            VarDef(
+                key="comms.bb.down.bandwidthHz",
+                name="BB Down Bandwidth",
+                unit="Hz",
+                data_type="num",
+                desc="BB downlink bandwidth",
+                gen=lambda s: 20_000_000,
+            ),
+            VarDef(
+                key="comms.bb.down.channel",
+                name="BB Down Channel",
+                unit=None,
+                data_type="int",
+                desc="BB downlink channel",
+                gen=lambda s: 149,
+            ),
+            VarDef(
+                key="comms.bb.down.lastTxEpochMs",
+                name="BB Down Last Tx",
+                unit="ms",
+                data_type="int",
+                desc="BB downlink last TX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(0, 200)),
+            ),
+            VarDef(
+                key="comms.bb.down.lastRxEpochMs",
+                name="BB Down Last Rx",
+                unit="ms",
+                data_type="int",
+                desc="BB downlink last RX timestamp",
+                gen=lambda s: int(s.epoch_ms - random.randint(0, 200)),
+            ),
+        ]
+    )
+
+    return vars
 
 
 def to_measurement_row(

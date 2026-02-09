@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watchEffect } from "vue"
+import { computed } from "vue"
 import Badge from "@/components/ui/badge/Badge.vue"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { storeToRefs } from "pinia"
 import { useLaunchpadStore } from "@/stores/launchpad"
+import { useCommsStore } from "@/stores/comms"
+import { useTelemetryStore } from "@/stores/telemetry"
 
+const NA = "n/a"
 const lp = useLaunchpadStore()
-const { countdownText, timer, meta, launch, weather } = storeToRefs(lp)
+const comms = useCommsStore()
+const telemetry = useTelemetryStore()
 
-const phase = computed(() => timer.value.phase.value) // "T-" | "T+" | "N/A"
-const phaseMeta = computed(() => meta.value.timer.phase) // { ts, ageMs, isStale }
+const { countdownText, timer, launch, weather } = storeToRefs(lp)
+const { meta: commsMeta, overallHealth, nb, bb, system } = storeToRefs(comms)
 
 const launchHold = computed(() => launch.value.hold.value)
+const launchHoldHasData = computed(() => launch.value.hold.ts > 0)
+
+const launchTimerText = computed(() => {
+  if (timer.value.phase.value === "N/A") return NA
+  return `${timer.value.phase.value}${countdownText.value}`
+})
 
 const windText = computed(() => {
   const w = weather.value.windSpeedMs.value
@@ -27,7 +37,7 @@ const windText = computed(() => {
     else if (dir >= 247.5 && dir < 292.5) dirText = "W"
     else if (dir >= 292.5 && dir < 337.5) dirText = "NW"
   }
-  return w != null && dirText != null ? `${dirText} ${w.toFixed(1)}m/s` : "N/A"
+  return w != null && dirText ? `${dirText} ${w.toFixed(1)}m/s` : NA
 })
 
 type EventRow = {
@@ -37,12 +47,16 @@ type EventRow = {
   message: string
 }
 
-const mission = ref({
-  vehicle: "Aerobär",
-  phase: "Pre-flight phase",
-  pad: "Pad Station 1",
-  wind: "6.2 m/s",
-  gps: "52.5123, 13.3267",
+const missionVehicle = computed(() => NA)
+const missionPad = computed(() => NA)
+const missionPhase = computed(() => launchTimerText.value)
+const missionWind = computed(() => windText.value)
+
+const gpsFix = computed(() => telemetry.valueByKey<Record<string, unknown>>("gps_fix"))
+const gpsText = computed(() => {
+  const gps = gpsFix.value as { lat?: number; lon?: number } | null
+  if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return NA
+  return `${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`
 })
 
 type KpiTone = "ok" | "warn" | "info" | "error" | "neutral" 
@@ -58,70 +72,174 @@ type Kpi = {
   statuses: KpiStatus[]
 }
 
+const toneForHealth = (h: string): KpiTone => {
+  if (h === "ok") return "ok"
+  if (h === "degraded") return "warn"
+  if (h === "offline") return "error"
+  return "neutral"
+}
+
+const commsHasData = computed(
+  () =>
+    commsMeta.value.nb.up.health.ts > 0 ||
+    commsMeta.value.nb.down.health.ts > 0 ||
+    commsMeta.value.bb.down.health.ts > 0
+)
+const commsOverallText = computed(() => (commsHasData.value ? overallHealth.value : NA))
+const nbUpHealthText = computed(() =>
+  commsMeta.value.nb.up.health.ts > 0 ? nb.value.up.health.value : NA
+)
+const nbDownHealthText = computed(() =>
+  commsMeta.value.nb.down.health.ts > 0 ? nb.value.down.health.value : NA
+)
+const bbDownHealthText = computed(() =>
+  commsMeta.value.bb.down.health.ts > 0 ? bb.value.down.health.value : NA
+)
+
+const armedValue = computed(() => telemetry.valueByKey<number>("armed"))
+const statusValue = computed(() => telemetry.valueByKey<string>("status"))
+const batteryValue = computed(() => telemetry.valueByKey<number>("battery_v"))
+
+const avionicsValue = computed(() => {
+  if (armedValue.value == null) return NA
+  return armedValue.value ? "Armed" : "Disarmed"
+})
+
+const avionicsStatuses = computed<KpiStatus[]>(() => {
+  const out: KpiStatus[] = []
+  out.push({
+    tone: statusValue.value ? "info" : "neutral",
+    message: statusValue.value ? `Status: ${statusValue.value}` : "Status: n/a",
+  })
+  out.push({
+    tone: batteryValue.value != null ? "neutral" : "neutral",
+    message: batteryValue.value != null ? `Batt: ${batteryValue.value.toFixed(2)}V` : "Batt: n/a",
+  })
+  return out
+})
+
+const weatherTempText = computed(() => {
+  const temp = weather.value.temperatureC.value
+  return temp == null ? NA : `${temp.toFixed(1)}°C`
+})
+const weatherConditionText = computed(() => {
+  const cond = weather.value.condition.value
+  return cond == null || cond === "" ? NA : cond
+})
+
+const groundStationValue = computed(() =>
+  system.value.source.ts > 0 && system.value.source.value ? system.value.source.value : NA
+)
+const groundStationStatus = computed(() =>
+  system.value.notes.ts > 0 && system.value.notes.value ? system.value.notes.value : NA
+)
+
 const kpis = computed<Kpi[]>(() => ([
   {
     label: "Launch Timer",
-    value: `${phase.value}${countdownText.value}`,
+    value: launchTimerText.value,
     statuses: [
-      { tone: launchHold.value ? "warn" : "ok", message: launchHold.value ? "Launch Hold" : "Go for Launch" },
+      {
+        tone: launchHoldHasData.value ? (launchHold.value ? "warn" : "ok") : "neutral",
+        message: launchHoldHasData.value ? (launchHold.value ? "Launch Hold" : "Go for Launch") : NA,
+      },
     ],
   },
   {
     label: "Avionics",
-    value: "Armed",
-    statuses: [
-      { tone: "warn", message: "Awaiting manual arming" }
-    ],
+    value: avionicsValue.value,
+    statuses: avionicsStatuses.value,
   },
   {
     label: "Comms",
-    value: "Online",
+    value: commsOverallText.value,
     statuses: [
-      { tone: "ok", message: "Uplink" },
-      { tone: "warn", message: "NB" },
-      { tone: "ok", message: "BB" },
+      { tone: toneForHealth(nbUpHealthText.value), message: `Uplink: ${nbUpHealthText.value}` },
+      { tone: toneForHealth(nbDownHealthText.value), message: `NB: ${nbDownHealthText.value}` },
+      { tone: toneForHealth(bbDownHealthText.value), message: `BB: ${bbDownHealthText.value}` },
     ],
   },
   {
     label: "Cameras",
-    value: "2/3",
+    value: NA,
     statuses: [
-      { tone: "ok", message: "OB1" },
-      { tone: "ok", message: "OB2" },
-      { tone: "error", message: "Pad" },
+      { tone: "neutral", message: NA },
     ],
   },
   {
     label: "Ground Station",
-    value: "Operational",
+    value: groundStationValue.value,
     statuses: [
-      { tone: "ok", message: "Wi-Fi link" }
+      { tone: groundStationStatus.value === NA ? "neutral" : "info", message: groundStationStatus.value },
     ],
   },
   {
     label: "Weather",
     value: windText.value,
     statuses: [
-      { tone: "warn", message: "Strong winds" },
-      { tone: "neutral", message: "32°C" },
+      { tone: weatherConditionText.value === NA ? "neutral" : "info", message: weatherConditionText.value },
+      { tone: weatherTempText.value === NA ? "neutral" : "neutral", message: weatherTempText.value },
     ],
   },
   {
     label: "Radar",
-    value: "Locked-On",
+    value: NA,
     statuses: [
-      { tone: "ok", message: "Mode: IR" },
+      { tone: "neutral", message: NA },
     ],
   },
 ]))
 
-const events = ref<EventRow[]>([
-  { time: "T-00:04:21", source: "Pad", level: "info", message: "Hold-down clamps verified." },
-  { time: "T-00:04:02", source: "Comms", level: "info", message: "NB uplink stable (avg 180 kb/s)." },
-  { time: "T-00:03:37", source: "Avionics", level: "warn", message: "IMU temperature rising (+2.1°C)." },
-  { time: "T-00:03:10", source: "Engine", level: "info", message: "Ignition circuit continuity OK." },
-  { time: "T-00:02:48", source: "Ground", level: "error", message: "Cam-2 dropped frames (recovering…)" },
-])
+const fmtTime = (ts: number | null | undefined): string => {
+  if (!ts) return NA
+  return new Date(ts).toLocaleTimeString()
+}
+const fmtTimeStr = (ts: string | null | undefined): string => {
+  if (!ts) return NA
+  const parsed = Date.parse(ts)
+  if (Number.isNaN(parsed)) return NA
+  return new Date(parsed).toLocaleTimeString()
+}
+
+const statusItem = computed(() => telemetry.latestByKey("status"))
+
+const events = computed<EventRow[]>(() => {
+  const rows: EventRow[] = []
+
+  if (launch.value.hold.ts > 0) {
+    rows.push({
+      time: fmtTime(launch.value.hold.ts),
+      source: "Launch",
+      level: launch.value.hold.value ? "warn" : "info",
+      message: launch.value.hold.value
+        ? `Hold: ${launch.value.holdReason.value || "Hold"}`
+        : "Hold released",
+    })
+  }
+
+  if (statusItem.value?.value) {
+    rows.push({
+      time: fmtTimeStr(statusItem.value.ts),
+      source: "Avionics",
+      level: "info",
+      message: String(statusItem.value.value),
+    })
+  }
+
+  if (system.value.notes.ts > 0 && system.value.notes.value) {
+    rows.push({
+      time: fmtTime(system.value.notes.ts),
+      source: "Comms",
+      level: "info",
+      message: system.value.notes.value,
+    })
+  }
+
+  if (rows.length === 0) {
+    return [{ time: NA, source: NA, level: "info", message: NA }]
+  }
+  return rows.slice(0, 5)
+})
 
 const badgeForLevel = computed(() => (lvl: EventRow["level"]) => {
   if (lvl === "error") return "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
@@ -150,9 +268,9 @@ const badgeForTone = (tone: KpiTone) => {
       </div>
 
       <div class="flex flex-wrap gap-2">
-        <Badge variant="outline">{{ mission.vehicle }}</Badge>
-        <Badge variant="outline">{{ mission.phase }}</Badge>
-        <Badge variant="outline">{{ mission.pad }}</Badge>
+        <Badge variant="outline">{{ missionVehicle }}</Badge>
+        <Badge variant="outline">{{ missionPhase }}</Badge>
+        <Badge variant="outline">{{ missionPad }}</Badge>
       </div>
     </div>
 
@@ -189,10 +307,10 @@ const badgeForTone = (tone: KpiTone) => {
           <CardDescription>Current environment + GPS</CardDescription>
         </CardHeader>
         <CardContent class="space-y-2 text-sm">
-          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Wind</span><span>{{ mission.wind }}</span></div>
-          <div class="flex justify-between gap-3"><span class="text-muted-foreground">GPS</span><span class="font-mono">{{ mission.gps }}</span></div>
-          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Phase</span><span>{{ mission.phase }}</span></div>
-          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Pad</span><span>{{ mission.pad }}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Wind</span><span>{{ missionWind }}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-muted-foreground">GPS</span><span class="font-mono">{{ gpsText }}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Phase</span><span>{{ missionPhase }}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-muted-foreground">Pad</span><span>{{ missionPad }}</span></div>
         </CardContent>
       </Card>
 

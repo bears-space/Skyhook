@@ -84,16 +84,6 @@ function buildMeta<TState extends Record<string, Timed<any>>>(
   return out
 }
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
-}
-function rand(min: number, max: number): number {
-  return min + Math.random() * (max - min)
-}
-function jitter(n: number, amount: number): number {
-  return n + rand(-amount, amount)
-}
-
 function formatCountdown(ms: number | null): string {
   if (ms === null) return "--:--:--"
   const sign = ms < 0 ? "-" : ""
@@ -246,180 +236,25 @@ export const useLaunchpadStore = defineStore("launchpad", () => {
   const countdownMs = computed<number | null>(() => timer.value.countdownMs.value)
   const countdownText = computed<string>(() => timer.value.countdownText.value)
 
-  // ---- simulateData(): updates values every second ----
-  // Call simulateData() once to start. Call stopSimulation() to stop.
-  const simulation = ref<{ running: boolean; intervalId: number | null }>({
+  // ---- clock for derived timer fields ----
+  const clock = ref<{ running: boolean; intervalId: number | null }>({
     running: false,
     intervalId: null,
   })
 
-  function stopSimulation(): void {
-    if (simulation.value.intervalId != null) {
-      clearInterval(simulation.value.intervalId)
-      simulation.value.intervalId = null
-    }
-    simulation.value.running = false
+  function startClock(): void {
+    if (clock.value.running) return
+    clock.value.running = true
+    updateTimer(now())
+    clock.value.intervalId = window.setInterval(() => updateTimer(now()), 1000)
   }
 
-  function simulateData(options?: {
-    startT0InMs?: number // default: 10 minutes
-    recycleAfterLiftoffMs?: number // default: 30 seconds after T0
-    holdChancePerTick?: number // default: 0.03
-    releaseChancePerTick?: number // default: 0.12
-  }): void {
-    if (simulation.value.running) return
-
-    const startT0InMs = options?.startT0InMs ?? 10 * 60_000
-    const recycleAfterLiftoffMs = options?.recycleAfterLiftoffMs ?? 30_000
-    const holdChancePerTick = options?.holdChancePerTick ?? 0.03
-    const releaseChancePerTick = options?.releaseChancePerTick ?? 0.12
-
-    const startTs = now()
-    let lastTickTs = startTs
-
-    const seed = () => {
-      const ts = now()
-
-      setWeatherField("temperatureC", rand(-5, 25), ts)
-      setWeatherField("humidityPct", rand(20, 95), ts)
-      setWeatherField("pressureHpa", rand(980, 1035), ts)
-      setWeatherField("windSpeedMs", rand(0, 15), ts)
-      setWeatherField("windGustMs", rand(0, 25), ts)
-      setWeatherField("windDirDeg", rand(0, 360), ts)
-      setWeatherField("precipitationMm", rand(0, 5), ts)
-      setWeatherField("cloudCoverPct", rand(0, 100), ts)
-      setWeatherField("visibilityM", rand(500, 20_000), ts)
-      setWeatherField("lightningRisk", Math.random() < 0.05 ? true : false, ts)
-
-      const conditions = ["Clear", "Cloudy", "Rain", "Fog", "Windy"] as const
-      const picked = conditions[Math.floor(Math.random() * conditions.length)] ?? "Clear"
-      setWeatherField("condition", picked, ts)
-
-      // Timer: set initial T0 and clear hold
-      setT0(ts + startT0InMs, ts)
-      setHold(false, null, ts)
-
-      markStatus({ source: "sim", health: "ok" }, ts)
-      updateTimer(ts)
+  function stopClock(): void {
+    if (clock.value.intervalId != null) {
+      clearInterval(clock.value.intervalId)
+      clock.value.intervalId = null
     }
-
-    const recycleTimer = (ts: TsMs) => {
-      setHold(false, null, ts)
-      setT0(ts + startT0InMs, ts)
-      updateTimer(ts)
-    }
-
-    seed()
-
-    simulation.value.running = true
-    simulation.value.intervalId = window.setInterval(() => {
-      const ts = now()
-      const dt = ts - lastTickTs
-      lastTickTs = ts
-      const t = (ts - startTs) / 1000
-
-      // ---- weather sim ----
-      const temp = weather.value.temperatureC.value ?? 10
-      setWeatherField(
-        "temperatureC",
-        clamp(jitter(temp, 0.2) + Math.sin(t / 60) * 0.02, -20, 40),
-        ts
-      )
-
-      const hum = weather.value.humidityPct.value ?? 50
-      setWeatherField("humidityPct", clamp(jitter(hum, 0.8) + Math.sin(t / 45) * 0.1, 0, 100), ts)
-
-      const p = weather.value.pressureHpa.value ?? 1013
-      setWeatherField(
-        "pressureHpa",
-        clamp(jitter(p, 0.3) + Math.sin(t / 180) * 0.05, 930, 1060),
-        ts
-      )
-
-      const ws = weather.value.windSpeedMs.value ?? 3
-      const newWs = clamp(jitter(ws, 0.8), 0, 35)
-      const gust = weather.value.windGustMs.value ?? newWs + 2
-      const newGust = clamp(Math.max(newWs, jitter(gust, 1.5)), 0, 50)
-      setWeatherField("windSpeedMs", newWs, ts)
-      setWeatherField("windGustMs", newGust, ts)
-
-      const wd = weather.value.windDirDeg.value ?? 0
-      let newWd = wd + rand(-8, 8)
-      if (newWd < 0) newWd += 360
-      if (newWd >= 360) newWd -= 360
-      setWeatherField("windDirDeg", newWd, ts)
-
-      const cc = weather.value.cloudCoverPct.value ?? 20
-      const newCc = clamp(jitter(cc, 2.0), 0, 100)
-      setWeatherField("cloudCoverPct", newCc, ts)
-
-      const visBase = 20_000 - newCc * 120
-      setWeatherField("visibilityM", clamp(jitter(visBase, 300), 200, 20_000), ts)
-
-      const precip = newCc > 75 ? clamp(rand(0, 6), 0, 20) : 0
-      setWeatherField("precipitationMm", precip, ts)
-
-      const lightning = precip > 0 && newCc > 85 && Math.random() < 0.08
-      setWeatherField("lightningRisk", lightning, ts)
-
-      const cond: string = precip > 0 ? "Rain" : newCc > 70 ? "Cloudy" : newWs > 12 ? "Windy" : "Clear"
-      setWeatherField("condition", cond, ts)
-
-      // ---- timer sim ----
-      const onHold = launch.value.hold.value
-      if (!onHold && Math.random() < holdChancePerTick) {
-        setHold(true, "Range check", ts)
-      } else if (onHold && Math.random() < releaseChancePerTick) {
-        setHold(false, null, ts)
-      }
-
-      // If holding: push T0 forward so countdown freezes
-      const t0 = launch.value.t0EpochMs.value
-      if (launch.value.hold.value && typeof t0 === "number") {
-        setT0(t0 + dt, ts)
-      }
-
-      // Recycle after liftoff + X ms
-      const t0Now = launch.value.t0EpochMs.value
-      if (typeof t0Now === "number" && ts - t0Now > recycleAfterLiftoffMs) {
-        recycleTimer(ts)
-      }
-
-      // ✅ countdown variables tick every second (timed + timestamped)
-      updateTimer(ts)
-
-      markStatus({ source: "sim", health: "ok" }, ts)
-    }, 1000)
-  }
-
-  // ---- optional: fetch example ----
-  type ApiLaunchpadResponse = Partial<{
-    source: string
-    weather: Partial<Record<WeatherKey, WeatherState[WeatherKey]["value"]>>
-    launch: Partial<{ t0EpochMs: TsMs | null; hold: boolean; holdReason: string | null }>
-  }>
-
-  async function fetchLaunchpad(url: string = "/api/launchpad"): Promise<void> {
-    const ts = now()
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = (await res.json()) as ApiLaunchpadResponse
-
-    if (data.weather) {
-      for (const [k, v] of Object.entries(data.weather) as Array<
-        [WeatherKey, WeatherState[WeatherKey]["value"]]
-      >) {
-        if (k in weather.value) setWeatherField(k, v, ts)
-      }
-    }
-
-    if (data.launch) {
-      if ("t0EpochMs" in data.launch) setT0(data.launch.t0EpochMs ?? null, ts)
-      if ("hold" in data.launch) setHold(!!data.launch.hold, data.launch.holdReason ?? null, ts)
-    }
-
-    markStatus({ source: data.source ?? "api", health: "ok" }, ts)
-    updateTimer(ts)
+    clock.value.running = false
   }
 
   return {
@@ -445,11 +280,8 @@ export const useLaunchpadStore = defineStore("launchpad", () => {
     markStatus,
 
     updateTimer,
-    fetchLaunchpad,
-
-    // simulation controls
-    simulateData,
-    stopSimulation,
-    simulation, // { running, intervalId }
+    startClock,
+    stopClock,
+    clock,
   }
 })

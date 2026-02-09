@@ -11,7 +11,10 @@ const { countdownText, timer, launch } = storeToRefs(lp)
 
 const launchHold = computed(() => launch.value.hold.value)
 
-const phaseText = computed(() => timer.value.phase.value + countdownText.value)
+const phaseText = computed(() => {
+  if (timer.value.phase.value === "N/A") return "n/a"
+  return `${timer.value.phase.value}${countdownText.value}`
+})
 const phaseBadgeClass = computed(() => {
   if (launchHold.value) {
     return "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
@@ -20,7 +23,6 @@ const phaseBadgeClass = computed(() => {
 
 const props = defineProps<{
   routeName?: string | null
-  timer: string
   wsStatus: string
   wsBadgeClass: string
 }>()

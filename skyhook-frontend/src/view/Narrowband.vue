@@ -8,6 +8,7 @@ import { storeToRefs } from "pinia"
 
 type Tone = "ok" | "warn" | "error" | "info" | "neutral"
 
+const NA = "n/a"
 const comms = useCommsStore()
 const { nb, system, meta, overallHealth } = storeToRefs(comms)
 
@@ -19,14 +20,16 @@ const toneClass = (tone: Tone) => {
   return "bg-muted text-muted-foreground"
 }
 
-const healthTone = (h: LinkHealth | undefined): Tone => {
+const healthTone = (h: LinkHealth | string | undefined): Tone => {
+  if (h === NA) return "neutral"
   if (h === "ok") return "ok"
   if (h === "degraded") return "warn"
   if (h === "offline") return "error"
   return "neutral"
 }
 
-const stateTone = (s: LinkState | undefined): Tone => {
+const stateTone = (s: LinkState | string | undefined): Tone => {
+  if (s === NA) return "neutral"
   if (s === "error") return "error"
   if (s === "acquiring") return "warn"
   if (s === "locked" || s === "tx" || s === "rx") return "ok"
@@ -34,10 +37,11 @@ const stateTone = (s: LinkState | undefined): Tone => {
   return "neutral"
 }
 
-const staleTone = (m?: TimedMeta): Tone => (m?.isStale ? "warn" : "ok")
+const hasData = (m?: TimedMeta): boolean => !!m && m.ts > 0
+const staleTone = (m?: TimedMeta): Tone => (hasData(m) ? (m?.isStale ? "warn" : "ok") : "neutral")
 
 const fmtAge = (m?: TimedMeta): string => {
-  if (!m || m.ageMs == null) return "never"
+  if (!m || m.ageMs == null) return NA
   if (m.ageMs < 1_000) return "just now"
   if (m.ageMs < 60_000) return `${Math.floor(m.ageMs / 1_000)}s ago`
   const mins = Math.floor(m.ageMs / 60_000)
@@ -46,30 +50,37 @@ const fmtAge = (m?: TimedMeta): string => {
   return `${hours}h ago`
 }
 
+const liveLabel = (m?: TimedMeta): string => (hasData(m) ? `live · ${fmtAge(m)}` : NA)
+const lastUpdateLabel = (m?: TimedMeta): string =>
+  hasData(m) ? `Last update ${fmtAge(m)}` : NA
+const updateLabel = (m?: TimedMeta): string => (hasData(m) ? `Updated ${fmtAge(m)}` : NA)
+const dataStateLabel = (m?: TimedMeta): string =>
+  hasData(m) ? (m?.isStale ? "stale" : "live") : NA
+
 const fmtBps = (bps: number | null): string => {
-  if (bps == null) return "—"
+  if (bps == null) return NA
   if (Math.abs(bps) >= 1_000_000) return `${(bps / 1_000_000).toFixed(2)} Mb/s`
   if (Math.abs(bps) >= 1_000) return `${(bps / 1_000).toFixed(1)} kb/s`
   return `${bps.toFixed(0)} b/s`
 }
-const fmtPct = (n: number | null, digits = 0): string => (n == null ? "—" : `${n.toFixed(digits)}%`)
-const fmtDb = (n: number | null, unit = "dB"): string => (n == null ? "—" : `${n.toFixed(1)} ${unit}`)
-const fmtMs = (n: number | null): string => (n == null ? "—" : `${n.toFixed(0)} ms`)
+const fmtPct = (n: number | null, digits = 0): string => (n == null ? NA : `${n.toFixed(digits)}%`)
+const fmtDb = (n: number | null, unit = "dB"): string => (n == null ? NA : `${n.toFixed(1)} ${unit}`)
+const fmtMs = (n: number | null): string => (n == null ? NA : `${n.toFixed(0)} ms`)
 const fmtHz = (n: number | null): string => {
-  if (n == null) return "—"
+  if (n == null) return NA
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(3)} MHz`
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)} kHz`
   return `${n.toFixed(0)} Hz`
 }
-const fmtTime = (ts: number | null): string => (ts ? new Date(ts).toLocaleTimeString() : "—")
+const fmtTime = (ts: number | null): string => (ts ? new Date(ts).toLocaleTimeString() : NA)
 const fmtSci = (n: number | null): string => {
-  if (n == null) return "—"
+  if (n == null) return NA
   if (n === 0) return "0"
   return n < 0.001 ? n.toExponential(1) : n.toFixed(3)
 }
 
-const stateLabel = (s: LinkState | undefined): string => {
-  if (!s) return "unknown"
+const stateLabel = (s: LinkState | string | undefined): string => {
+  if (!s || s === NA) return NA
   if (s === "tx") return "Transmitting"
   if (s === "rx") return "Receiving"
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -88,7 +99,9 @@ const addSample = (
   ts: number | null | undefined,
 ) => {
   const scaled = typeof bps === "number" ? Number((bps / 1_000).toFixed(2)) : null
-  const label = ts ? new Date(ts).toLocaleTimeString("en-US", { minute: "2-digit", second: "2-digit" }) : "—"
+  const label = ts
+    ? new Date(ts).toLocaleTimeString("en-US", { minute: "2-digit", second: "2-digit" })
+    : NA
   seriesRef.value = [...seriesRef.value, scaled].slice(-MAX_POINTS)
   catRef.value = [...catRef.value, label].slice(-MAX_POINTS)
 }
@@ -114,7 +127,7 @@ const downlinkSeries = computed(() => [
   { name: "Downlink", type: "line", data: downlinkKbps.value },
 ])
 const formatKbpsTick = (val: number | null | undefined) =>
-  val == null || Number.isNaN(val) ? "—" : `${Number(val).toFixed(1)} kb/s`
+  val == null || Number.isNaN(val) ? NA : `${Number(val).toFixed(1)} kb/s`
 
 type Metric = {
   key: string
@@ -139,7 +152,7 @@ const uplinkMetrics = computed<Metric[]>(() => {
     { key: "jitter", label: "Jitter", value: fmtMs(f.jitterMs.value), meta: m.jitterMs },
     { key: "freq", label: "Center freq", value: fmtHz(f.freqHz.value), meta: m.freqHz },
     { key: "bandwidth", label: "Bandwidth", value: fmtHz(f.bandwidthHz.value), meta: m.bandwidthHz },
-    { key: "modcod", label: "Mod/Cod", value: f.modcod.value ?? "—", meta: m.modcod },
+    { key: "modcod", label: "Mod/Cod", value: f.modcod.value ?? NA, meta: m.modcod },
     { key: "last-tx", label: "Last Tx", value: fmtTime(f.lastTxEpochMs.value), meta: m.lastTxEpochMs },
     { key: "last-rx", label: "Last Rx", value: fmtTime(f.lastRxEpochMs.value), meta: m.lastRxEpochMs },
   ]
@@ -162,14 +175,32 @@ const downlinkMetrics = computed<Metric[]>(() => {
     { key: "jitter", label: "Jitter", value: fmtMs(f.jitterMs.value), meta: m.jitterMs },
     { key: "freq", label: "Center freq", value: fmtHz(f.freqHz.value), meta: m.freqHz },
     { key: "bandwidth", label: "Bandwidth", value: fmtHz(f.bandwidthHz.value), meta: m.bandwidthHz },
-    { key: "modcod", label: "Mod/Cod", value: f.modcod.value ?? "—", meta: m.modcod },
+    { key: "modcod", label: "Mod/Cod", value: f.modcod.value ?? NA, meta: m.modcod },
     { key: "last-tx", label: "Last Tx", value: fmtTime(f.lastTxEpochMs.value), meta: m.lastTxEpochMs },
     { key: "last-rx", label: "Last Rx", value: fmtTime(f.lastRxEpochMs.value), meta: m.lastRxEpochMs },
   ]
 })
 
 const lastUpdateMeta = computed(() => meta.value.system.lastUpdateEpochMs)
-const systemSource = computed(() => system.value.source.value ?? "unknown")
+const systemSource = computed(() =>
+  system.value.source.ts > 0 && system.value.source.value ? system.value.source.value : NA
+)
+
+const overallHealthText = computed(() =>
+  hasData(meta.value.nb.up.health) ||
+  hasData(meta.value.nb.down.health) ||
+  hasData(meta.value.bb.down.health)
+    ? overallHealth.value
+    : NA
+)
+const nbUpHealthText = computed(() => (hasData(meta.value.nb.up.health) ? nb.value.up.health.value : NA))
+const nbDownHealthText = computed(() =>
+  hasData(meta.value.nb.down.health) ? nb.value.down.health.value : NA
+)
+const nbUpStateText = computed(() => (hasData(meta.value.nb.up.state) ? nb.value.up.state.value : NA))
+const nbDownStateText = computed(() =>
+  hasData(meta.value.nb.down.state) ? nb.value.down.state.value : NA
+)
 </script>
 
 <template>
@@ -180,16 +211,16 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
         <div class="text-sm text-muted-foreground">
           Live link health for the narrowband command/telemetry channel.
           <span class="font-medium text-foreground">
-            Updated {{ fmtAge(lastUpdateMeta) }} ({{ systemSource }}).
+            Updated {{ hasData(lastUpdateMeta) ? fmtAge(lastUpdateMeta) : NA }} ({{ systemSource }}).
           </span>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">
-        <Badge variant="outline" :class="toneClass(healthTone(overallHealth))">Overall {{ overallHealth }}</Badge>
-        <Badge variant="outline" :class="toneClass(healthTone(nb.up.health.value))">Uplink: {{ nb.up.health.value }}</Badge>
-        <Badge variant="outline" :class="toneClass(healthTone(nb.down.health.value))">Downlink: {{ nb.down.health.value }}</Badge>
+        <Badge variant="outline" :class="toneClass(healthTone(overallHealthText))">Overall {{ overallHealthText }}</Badge>
+        <Badge variant="outline" :class="toneClass(healthTone(nbUpHealthText))">Uplink: {{ nbUpHealthText }}</Badge>
+        <Badge variant="outline" :class="toneClass(healthTone(nbDownHealthText))">Downlink: {{ nbDownHealthText }}</Badge>
         <Badge variant="outline" :class="toneClass(staleTone(lastUpdateMeta))">
-          Last update {{ fmtAge(lastUpdateMeta) }}
+          {{ lastUpdateLabel(lastUpdateMeta) }}
         </Badge>
       </div>
     </div>
@@ -199,11 +230,11 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
         <CardHeader class="pb-2 space-y-1">
           <CardTitle class="flex flex-wrap items-center gap-2">
             Uplink (Ground → Vehicle)
-            <Badge variant="outline" :class="toneClass(healthTone(nb.up.health.value))">
-              {{ nb.up.health.value }}
+            <Badge variant="outline" :class="toneClass(healthTone(nbUpHealthText))">
+              {{ nbUpHealthText }}
             </Badge>
-            <Badge variant="outline" :class="toneClass(stateTone(nb.up.state.value))">
-              {{ stateLabel(nb.up.state.value) }}
+            <Badge variant="outline" :class="toneClass(stateTone(nbUpStateText))">
+              {{ stateLabel(nbUpStateText) }}
             </Badge>
           </CardTitle>
           <CardDescription>Command uplink, narrowband radio.</CardDescription>
@@ -214,7 +245,7 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
               {{ fmtBps(nb.up.rateBps.value) }}
             </div>
             <Badge variant="outline" :class="toneClass(staleTone(meta.nb.up.rateBps))">
-              live · {{ fmtAge(meta.nb.up.rateBps) }}
+              {{ liveLabel(meta.nb.up.rateBps) }}
             </Badge>
             <Badge variant="outline" class="bg-secondary/60 text-foreground">
               Avg {{ fmtBps(nb.up.rateAvgBps.value) }}
@@ -231,7 +262,7 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
             :y-label-formatter="formatKbpsTick"
           >
             <Badge class="mt-2" :class="toneClass(staleTone(meta.nb.up.rateBps))">
-              Last update {{ fmtAge(meta.nb.up.rateBps) }}
+              {{ lastUpdateLabel(meta.nb.up.rateBps) }}
             </Badge>
           </GradientLineApex>
 
@@ -244,14 +275,14 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
               <div class="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{{ m.label }}</span>
                 <span :class="toneClass(staleTone(m.meta))" class="rounded px-2 py-0.5">
-                  {{ m.meta ? (m.meta.isStale ? "stale" : "live") : "n/a" }}
+                  {{ dataStateLabel(m.meta) }}
                 </span>
               </div>
               <div class="mt-1 text-lg font-semibold leading-tight">
                 {{ m.value }}
               </div>
               <div class="text-[11px] text-muted-foreground">
-                {{ m.meta ? `Updated ${fmtAge(m.meta)}` : "No telemetry yet" }}
+                {{ updateLabel(m.meta) }}
               </div>
               <div v-if="m.hint" class="text-[11px] text-muted-foreground">{{ m.hint }}</div>
             </div>
@@ -263,11 +294,11 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
         <CardHeader class="pb-2 space-y-1">
           <CardTitle class="flex flex-wrap items-center gap-2">
             Downlink (Vehicle → Ground)
-            <Badge variant="outline" :class="toneClass(healthTone(nb.down.health.value))">
-              {{ nb.down.health.value }}
+            <Badge variant="outline" :class="toneClass(healthTone(nbDownHealthText))">
+              {{ nbDownHealthText }}
             </Badge>
-            <Badge variant="outline" :class="toneClass(stateTone(nb.down.state.value))">
-              {{ stateLabel(nb.down.state.value) }}
+            <Badge variant="outline" :class="toneClass(stateTone(nbDownStateText))">
+              {{ stateLabel(nbDownStateText) }}
             </Badge>
           </CardTitle>
           <CardDescription>Telemetry return path.</CardDescription>
@@ -278,7 +309,7 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
               {{ fmtBps(nb.down.rateBps.value) }}
             </div>
             <Badge variant="outline" :class="toneClass(staleTone(meta.nb.down.rateBps))">
-              live · {{ fmtAge(meta.nb.down.rateBps) }}
+              {{ liveLabel(meta.nb.down.rateBps) }}
             </Badge>
             <Badge variant="outline" class="bg-secondary/60 text-foreground">
               Avg {{ fmtBps(nb.down.rateAvgBps.value) }}
@@ -295,7 +326,7 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
             :y-label-formatter="formatKbpsTick"
           >
             <Badge class="mt-2" :class="toneClass(staleTone(meta.nb.down.rateBps))">
-              Last update {{ fmtAge(meta.nb.down.rateBps) }}
+              {{ lastUpdateLabel(meta.nb.down.rateBps) }}
             </Badge>
           </GradientLineApex>
 
@@ -308,14 +339,14 @@ const systemSource = computed(() => system.value.source.value ?? "unknown")
               <div class="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{{ m.label }}</span>
                 <span :class="toneClass(staleTone(m.meta))" class="rounded px-2 py-0.5">
-                  {{ m.meta ? (m.meta.isStale ? "stale" : "live") : "n/a" }}
+                  {{ dataStateLabel(m.meta) }}
                 </span>
               </div>
               <div class="mt-1 text-lg font-semibold leading-tight">
                 {{ m.value }}
               </div>
               <div class="text-[11px] text-muted-foreground">
-                {{ m.meta ? `Updated ${fmtAge(m.meta)}` : "No telemetry yet" }}
+                {{ updateLabel(m.meta) }}
               </div>
               <div v-if="m.hint" class="text-[11px] text-muted-foreground">{{ m.hint }}</div>
             </div>

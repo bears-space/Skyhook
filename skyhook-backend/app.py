@@ -7,6 +7,7 @@ from database.cdc_bridge import (
     CDCConfig,
     CDCBridge,
     get_latest_snapshot,
+    get_sensor_ids,
     room_for_sensor,
 )
 
@@ -64,6 +65,28 @@ def handle_unsubscribe(data):
     room = room_for_sensor(sensor_id)
     leave_room(room)
     emit("unsubscribed", {"room": room})
+
+
+@socketio.on("subscribe_all")
+def handle_subscribe_all(data=None):
+    """
+    data (optional):
+      { "variable_ids": [1,2,3] }  # variable_ids optional
+    """
+    variable_ids = None
+    if isinstance(data, dict):
+        variable_ids = data.get("variable_ids")
+        if variable_ids is not None:
+            variable_ids = [int(x) for x in variable_ids]
+
+    sensor_ids = get_sensor_ids(db_cfg)
+    for sensor_id in sensor_ids:
+        room = room_for_sensor(sensor_id)
+        join_room(room)
+        snap = get_latest_snapshot(db_cfg, sensor_id, variable_ids=variable_ids)
+        emit("snapshot", snap)
+
+    emit("subscribed_all", {"sensors": sensor_ids})
 
 
 if __name__ == "__main__":

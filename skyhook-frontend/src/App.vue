@@ -9,33 +9,26 @@ import StatusStrip from "@/components/layout/StatusStrip.vue"
 import { socket } from "@/socket"
 import { notify } from "@/lib/notifications"
 import { WifiOffIcon } from "lucide-vue-next"
+import { useCommsStore } from "@/stores/comms"
+import { storeToRefs } from "pinia"
 
 const route = useRoute()
 const THEME_STORAGE_KEY = "skyhook-theme"
 const isDark = ref(false)
 
-const TOTAL_SECONDS = 5 * 60 * 60
-const remainingSeconds = ref(TOTAL_SECONDS)
+const comms = useCommsStore()
+const { nb, bb } = storeToRefs(comms)
 
-const formatRemainingTime = (seconds: number) => {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  return `T-${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+const formatBps = (bps: number | null | undefined): string => {
+  if (bps == null || Number.isNaN(bps)) return "n/a"
+  if (Math.abs(bps) >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mb/s`
+  if (Math.abs(bps) >= 1_000) return `${(bps / 1_000).toFixed(1)} kb/s`
+  return `${bps.toFixed(0)} b/s`
 }
 
-const timer = ref(formatRemainingTime(remainingSeconds.value))
-
-const tickTimer = () => {
-  if (remainingSeconds.value > 0) {
-    remainingSeconds.value -= 1
-  }
-  timer.value = formatRemainingTime(remainingSeconds.value)
-}
-
-const uplinkSpeed = ref("")
-const nbSpeed = ref("")
-const bbSpeed = ref("")
+const uplinkSpeed = computed(() => formatBps(nb.value.up.rateBps.value))
+const nbSpeed = computed(() => formatBps(nb.value.down.rateBps.value))
+const bbSpeed = computed(() => formatBps(bb.value.down.rateBps.value))
 const wsStatus = ref(socket.connected ? "Online" : "Offline")
 const wsBadgeClass = computed(() => {
   if (wsStatus.value === "Online") {
@@ -47,16 +40,6 @@ const wsBadgeClass = computed(() => {
   return "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
 })
 
-const formatSpeed = (minKb: number, maxKb: number) =>
-  `${(Math.random() * (maxKb - minKb) + minKb).toFixed(1)}kb/s`
-
-const updateMetrics = () => {
-  tickTimer()
-  uplinkSpeed.value = formatSpeed(30, 140)
-  nbSpeed.value = formatSpeed(90, 260)
-  bbSpeed.value = `${(Math.random() * 6).toFixed(1)}mb/s`
-}
-
 const applyTheme = (dark: boolean) => {
   isDark.value = dark
   const root = document.documentElement
@@ -65,8 +48,6 @@ const applyTheme = (dark: boolean) => {
 }
 
 const toggleTheme = () => applyTheme(!isDark.value)
-
-let intervalId: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   const storedPreference = localStorage.getItem(THEME_STORAGE_KEY)
@@ -114,9 +95,6 @@ onMounted(() => {
     wsStatus.value = "Reconnecting..."
   }
 
-  updateMetrics()
-  intervalId = setInterval(updateMetrics, 1000)
-
   wsStatus.value = socket.connected ? "Online" : "Connecting..."
   socket.on("connect", setOnline)
   socket.on("disconnect", setOffline)
@@ -127,9 +105,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (intervalId) {
-    clearInterval(intervalId)
-  }
   socket.off("connect")
   socket.off("disconnect")
   socket.off("connect_error")
@@ -149,12 +124,11 @@ onBeforeUnmount(() => {
 
     <SidebarInset class="h-svh pb-12 flex flex-col bg-muted/20 overflow-hidden">
       <!-- top header bar -->
-      <AppHeader
-        :route-name="route.name ? String(route.name) : null"
-        :timer="timer"
-        :ws-status="wsStatus"
-        :ws-badge-class="wsBadgeClass"
-      />
+    <AppHeader
+      :route-name="route.name ? String(route.name) : null"
+      :ws-status="wsStatus"
+      :ws-badge-class="wsBadgeClass"
+    />
 
       <!-- page content wrapper -->
       <main class="flex-1 min-h-0 overflow-auto">
