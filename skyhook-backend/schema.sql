@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS variables (
 CREATE TABLE IF NOT EXISTS measurements (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-  -- historischer Messzeitpunkt (mit Millisekunden)
-  ts DATETIME(3) NOT NULL,
+  -- historischer Messzeitpunkt (Unix ms)
+  ts BIGINT UNSIGNED NOT NULL,
 
   sensor_id BIGINT UNSIGNED NOT NULL,
   variable_id BIGINT UNSIGNED NOT NULL,
@@ -119,6 +119,9 @@ CREATE TABLE IF NOT EXISTS measurements (
   CONSTRAINT fk_measurements_variable FOREIGN KEY (variable_id) REFERENCES variables(id)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ensure ts column type is Unix ms even on existing DBs
+ALTER TABLE measurements MODIFY COLUMN ts BIGINT UNSIGNED NOT NULL;
 
 -- =========================
 -- Triggers (NO DELIMITER!)

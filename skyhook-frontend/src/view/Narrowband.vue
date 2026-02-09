@@ -50,7 +50,8 @@ const fmtAge = (m?: TimedMeta): string => {
   return `${hours}h ago`
 }
 
-const liveLabel = (m?: TimedMeta): string => (hasData(m) ? `live · ${fmtAge(m)}` : NA)
+const liveLabel = (m?: TimedMeta): string =>
+  hasData(m) ? `${m?.isStale ? "stale" : "live"} · ${fmtAge(m)}` : NA
 const lastUpdateLabel = (m?: TimedMeta): string =>
   hasData(m) ? `Last update ${fmtAge(m)}` : NA
 const updateLabel = (m?: TimedMeta): string => (hasData(m) ? `Updated ${fmtAge(m)}` : NA)

@@ -1,6 +1,6 @@
 // src/stores/comms.ts
 import { defineStore } from "pinia"
-import { computed, reactive } from "vue"
+import { computed, reactive, ref } from "vue"
 
 export type TsMs = number
 export type TimedMeta = { ts: TsMs; ageMs: number | null; isStale: boolean }
@@ -182,14 +182,19 @@ const specs = {
   // Overall / shared comms info
   system: {
     source: F<string | null>(null, 60_000), // "sim", "radio", "api"
-    lastUpdateEpochMs: F<TsMs | null>(null, 5_000),
+    lastUpdateEpochMs: F<TsMs | null>(null, 3_000),
     notes: F<string | null>(null, 60_000),
   },
 } as const
 
 export const useCommsStore = defineStore("comms", () => {
   const state = reactive(makeState(specs))
-  const meta = computed(() => buildMeta(state))
+  const tick = ref(0)
+  const meta = computed(() => {
+    // Ensure isStale/ageMs keep updating even when no new data arrives.
+    void tick.value
+    return buildMeta(state)
+  })
 
   function set<
     G extends keyof typeof state,
@@ -240,6 +245,28 @@ export const useCommsStore = defineStore("comms", () => {
     return "ok"
   })
 
+  const clock = ref<{ running: boolean; intervalId: number | null }>({
+    running: false,
+    intervalId: null,
+  })
+
+  function startClock(): void {
+    if (clock.value.running) return
+    clock.value.running = true
+    tick.value = now()
+    clock.value.intervalId = window.setInterval(() => {
+      tick.value = now()
+    }, 1000)
+  }
+
+  function stopClock(): void {
+    if (clock.value.intervalId != null) {
+      clearInterval(clock.value.intervalId)
+      clock.value.intervalId = null
+    }
+    clock.value.running = false
+  }
+
   return {
     // groups
     nb: state.nb,
@@ -258,5 +285,10 @@ export const useCommsStore = defineStore("comms", () => {
     nbDownRateBps,
     bbDownRateBps,
     overallHealth,
+
+    // stale-age ticking
+    startClock,
+    stopClock,
+    clock,
   }
 })

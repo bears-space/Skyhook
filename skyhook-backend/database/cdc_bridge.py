@@ -7,7 +7,7 @@ import os
 import time
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import pymysql
@@ -138,6 +138,17 @@ def _decode_value_from_row(row: Dict[str, Any]) -> Tuple[Optional[str], Any]:
     return None, None
 
 
+def _ts_to_ms(ts_val: Any) -> int:
+    if isinstance(ts_val, datetime):
+        return int(ts_val.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    if isinstance(ts_val, (int, float)):
+        return int(ts_val)
+    try:
+        return int(ts_val)
+    except Exception:
+        return 0
+
+
 def _load_variable_key_map(db_cfg: DBConfig) -> Dict[int, str]:
     conn = _db_conn_read(db_cfg)
     try:
@@ -201,16 +212,11 @@ def get_latest_snapshot(
                     continue
 
                 vt, v = _decode_value_from_row(row)
-                ts_val = row.get("ts")
-                ts_str = (
-                    ts_val.isoformat(sep=" ", timespec="milliseconds")
-                    if isinstance(ts_val, datetime)
-                    else str(ts_val)
-                )
+                ts_ms = _ts_to_ms(row.get("ts"))
 
                 latest[vid] = {
                     "id": row.get("id"),
-                    "ts": ts_str,
+                    "ts": ts_ms,
                     "sensor_id": int(row.get("sensor_id")),
                     "variable_id": vid,
                     "variable_key": row.get("variable_key"),
@@ -307,16 +313,11 @@ class CDCBridge:
         except Exception:
             variable_key = None
 
-        ts_val = row.get("ts")
-        ts_str = (
-            ts_val.isoformat(sep=" ", timespec="milliseconds")
-            if isinstance(ts_val, datetime)
-            else str(ts_val)
-        )
+        ts_ms = _ts_to_ms(row.get("ts"))
 
         return {
             "id": row.get("id"),
-            "ts": ts_str,
+            "ts": ts_ms,
             "sensor_id": int(sensor_id),
             "variable_id": int(variable_id),
             "variable_key": variable_key,

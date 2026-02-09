@@ -46,11 +46,8 @@ def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
-def utc_now_dt3() -> str:
-    # MariaDB DATETIME(3) wants "YYYY-MM-DD HH:MM:SS.mmm"
-    # Use UTC to avoid timezone surprises.
-    dt = datetime.now(timezone.utc)
-    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(dt.microsecond/1000):03d}"
+def unix_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def clamp(n: float, min_v: float, max_v: float) -> float:
@@ -356,10 +353,10 @@ class DB:
 
     def insert_measurements_batch(
         self,
-        rows: List[Tuple[str, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]],
+        rows: List[Tuple[int, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]],
     ) -> None:
         """
-        rows: (ts, sensor_id, variable_id, value_type, value_num, value_int, value_bool, value_text, value_json, value_blob)
+        rows: (ts_ms, sensor_id, variable_id, value_type, value_num, value_int, value_bool, value_text, value_json, value_blob)
         """
         if not rows:
             return
@@ -1112,16 +1109,112 @@ def build_variables() -> List[VarDef]:
         ]
     )
 
+    # -----------------------------
+    # Mission / cameras / radar / ground station
+    # -----------------------------
+    vars.extend(
+        [
+            VarDef(
+                key="mission.vehicle",
+                name="Mission Vehicle",
+                unit=None,
+                data_type="text",
+                desc="Vehicle name",
+                gen=lambda s: "Aerobär",
+            ),
+            VarDef(
+                key="mission.phase",
+                name="Mission Phase",
+                unit=None,
+                data_type="text",
+                desc="Mission phase",
+                gen=lambda s: "Pre-flight phase",
+            ),
+            VarDef(
+                key="mission.pad",
+                name="Mission Pad",
+                unit=None,
+                data_type="text",
+                desc="Pad name",
+                gen=lambda s: "Pad Station 1",
+            ),
+            VarDef(
+                key="cameras.summary",
+                name="Cameras Summary",
+                unit=None,
+                data_type="text",
+                desc="Camera availability summary",
+                gen=lambda s: "2/3",
+            ),
+            VarDef(
+                key="cameras.ob1",
+                name="Camera OB1",
+                unit=None,
+                data_type="text",
+                desc="Camera OB1 status",
+                gen=lambda s: "ok",
+            ),
+            VarDef(
+                key="cameras.ob2",
+                name="Camera OB2",
+                unit=None,
+                data_type="text",
+                desc="Camera OB2 status",
+                gen=lambda s: "ok",
+            ),
+            VarDef(
+                key="cameras.pad",
+                name="Camera Pad",
+                unit=None,
+                data_type="text",
+                desc="Pad camera status",
+                gen=lambda s: "error",
+            ),
+            VarDef(
+                key="ground.station.status",
+                name="Ground Station Status",
+                unit=None,
+                data_type="text",
+                desc="Ground station status",
+                gen=lambda s: "Operational",
+            ),
+            VarDef(
+                key="ground.station.link",
+                name="Ground Station Link",
+                unit=None,
+                data_type="text",
+                desc="Ground station link",
+                gen=lambda s: "Wi-Fi link",
+            ),
+            VarDef(
+                key="radar.status",
+                name="Radar Status",
+                unit=None,
+                data_type="text",
+                desc="Radar status",
+                gen=lambda s: "Locked-On",
+            ),
+            VarDef(
+                key="radar.mode",
+                name="Radar Mode",
+                unit=None,
+                data_type="text",
+                desc="Radar mode",
+                gen=lambda s: "IR",
+            ),
+        ]
+    )
+
     return vars
 
 
 def to_measurement_row(
-    ts: str,
+    ts: int,
     sensor_id: int,
     variable_id: int,
     value_type: str,
     value: Any,
-) -> Tuple[str, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]:
+) -> Tuple[int, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]:
     """
     Maps (value_type, value) to the correct value_* column.
     Ensures only one value_* is non-null.
@@ -1187,7 +1280,7 @@ def run() -> int:
         for v in variables:
             var_ids[v.key] = db.ensure_variable(v)
 
-    pending_rows: List[Tuple[str, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]] = []
+    pending_rows: List[Tuple[int, int, int, str, Optional[float], Optional[int], Optional[int], Optional[str], Optional[str], Optional[bytes]]] = []
 
     print(f"[telemetry_sim] period={args.period_ms}ms batch={args.batch} dry_run={args.dry_run} sensor={args.sensor_name} 🚀")
 
@@ -1208,7 +1301,7 @@ def run() -> int:
         update_sim(state, dt)
         state.tick += 1
 
-        ts = utc_now_dt3()
+        ts = unix_ms()
 
         # build rows (one per variable)
         sample: Dict[str, Any] = {}

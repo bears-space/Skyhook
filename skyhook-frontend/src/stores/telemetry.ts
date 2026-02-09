@@ -1,6 +1,6 @@
 // src/stores/telemetry.ts
 import { defineStore } from "pinia"
-import { computed, reactive, ref } from "vue"
+import { reactive } from "vue"
 import { socket } from "@/socket"
 import { useLaunchpadStore } from "@/stores/launchpad"
 import { useCommsStore } from "@/stores/comms"
@@ -79,12 +79,12 @@ function applyLaunchpadKey(key: string, value: MeasurementValue, tsMs: number): 
       return
     }
     if (launchKey === "hold") {
-      const currentReason = lp.launch.value.holdReason.value ?? null
+      const currentReason = lp.launch.holdReason.value ?? null
       lp.setHold(!!value, currentReason, tsMs)
       return
     }
     if (launchKey === "holdReason") {
-      const currentHold = lp.launch.value.hold.value
+      const currentHold = lp.launch.hold.value
       lp.setHold(!!currentHold, value == null ? null : String(value), tsMs)
       return
     }
@@ -137,8 +137,6 @@ function dispatchVariable(item: Measurement): void {
 
 export const useTelemetryStore = defineStore("telemetry", () => {
   const sensors = reactive<Record<number, SensorState>>({})
-  const connected = ref(socket.connected)
-  const subscribedSensors = ref(new Set<number>())
 
   let listenersBound = false
 
@@ -168,7 +166,6 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     const msg: { sensor_id: number; variable_ids?: number[] } = { sensor_id: sensorId }
     if (variableIds && variableIds.length > 0) msg.variable_ids = variableIds
     socket.emit("subscribe", msg)
-    subscribedSensors.value.add(sensorId)
   }
 
   function subscribeAll(): void {
@@ -185,11 +182,7 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     listenersBound = true
 
     socket.on("connect", () => {
-      connected.value = true
       subscribeAll()
-    })
-    socket.on("disconnect", () => {
-      connected.value = false
     })
     socket.on("snapshot", applySnapshot)
     socket.on("measurements", applyMeasurements)
@@ -197,15 +190,6 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     if (socket.connected) {
       subscribeAll()
     }
-  }
-
-  function disconnect(): void {
-    if (!listenersBound) return
-    listenersBound = false
-    socket.off("connect")
-    socket.off("disconnect")
-    socket.off("snapshot", applySnapshot)
-    socket.off("measurements", applyMeasurements)
   }
 
   function latestByKey(key: string, sensorId?: number): Measurement | null {
@@ -232,20 +216,8 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     return item ? (item.value as T) : null
   }
 
-  const sensorIds = computed(() => Object.keys(sensors).map((k) => Number(k)))
-  const subscribedSensorIds = computed(() => Array.from(subscribedSensors.value))
-
   return {
-    sensors,
-    connected,
-    sensorIds,
-    subscribedSensorIds,
-    applySnapshot,
-    applyMeasurements,
-    subscribe,
-    subscribeAll,
     connect,
-    disconnect,
     latestByKey,
     valueByKey,
   }

@@ -4,7 +4,7 @@ import Badge from "@/components/ui/badge/Badge.vue"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { storeToRefs } from "pinia"
 import { useLaunchpadStore } from "@/stores/launchpad"
-import { useCommsStore } from "@/stores/comms"
+import { useCommsStore, type TimedMeta } from "@/stores/comms"
 import { useTelemetryStore } from "@/stores/telemetry"
 
 const NA = "n/a"
@@ -47,9 +47,9 @@ type EventRow = {
   message: string
 }
 
-const missionVehicle = computed(() => NA)
-const missionPad = computed(() => NA)
-const missionPhase = computed(() => launchTimerText.value)
+const missionVehicle = computed(() => telemetry.valueByKey<string>("mission.vehicle") ?? NA)
+const missionPad = computed(() => telemetry.valueByKey<string>("mission.pad") ?? NA)
+const missionPhase = computed(() => telemetry.valueByKey<string>("mission.phase") ?? NA)
 const missionWind = computed(() => windText.value)
 
 const gpsFix = computed(() => telemetry.valueByKey<Record<string, unknown>>("gps_fix"))
@@ -127,12 +127,30 @@ const weatherConditionText = computed(() => {
   return cond == null || cond === "" ? NA : cond
 })
 
-const groundStationValue = computed(() =>
-  system.value.source.ts > 0 && system.value.source.value ? system.value.source.value : NA
+const groundStationValue = computed(
+  () => telemetry.valueByKey<string>("ground.station.status") ?? NA
 )
-const groundStationStatus = computed(() =>
-  system.value.notes.ts > 0 && system.value.notes.value ? system.value.notes.value : NA
+const groundStationStatus = computed(
+  () => telemetry.valueByKey<string>("ground.station.link") ?? NA
 )
+
+const cameraSummary = computed(() => telemetry.valueByKey<string>("cameras.summary") ?? NA)
+const cameraOb1 = computed(() => telemetry.valueByKey<string>("cameras.ob1") ?? NA)
+const cameraOb2 = computed(() => telemetry.valueByKey<string>("cameras.ob2") ?? NA)
+const cameraPad = computed(() => telemetry.valueByKey<string>("cameras.pad") ?? NA)
+
+const radarStatus = computed(() => telemetry.valueByKey<string>("radar.status") ?? NA)
+const radarMode = computed(() => telemetry.valueByKey<string>("radar.mode") ?? NA)
+
+const toneForStatus = (value: string): KpiTone => {
+  if (value === NA) return "neutral"
+  const v = value.toLowerCase()
+  if (v.includes("error") || v.includes("down") || v.includes("offline") || v.includes("fail")) {
+    return "error"
+  }
+  if (v.includes("warn") || v.includes("degraded") || v.includes("hold")) return "warn"
+  return "ok"
+}
 
 const kpis = computed<Kpi[]>(() => ([
   {
@@ -161,9 +179,11 @@ const kpis = computed<Kpi[]>(() => ([
   },
   {
     label: "Cameras",
-    value: NA,
+    value: cameraSummary.value,
     statuses: [
-      { tone: "neutral", message: NA },
+      { tone: toneForStatus(cameraOb1.value), message: `OB1: ${cameraOb1.value}` },
+      { tone: toneForStatus(cameraOb2.value), message: `OB2: ${cameraOb2.value}` },
+      { tone: toneForStatus(cameraPad.value), message: `Pad: ${cameraPad.value}` },
     ],
   },
   {
@@ -183,9 +203,9 @@ const kpis = computed<Kpi[]>(() => ([
   },
   {
     label: "Radar",
-    value: NA,
+    value: radarStatus.value,
     statuses: [
-      { tone: "neutral", message: NA },
+      { tone: radarMode.value === NA ? "neutral" : "info", message: radarMode.value === NA ? NA : `Mode: ${radarMode.value}` },
     ],
   },
 ]))
@@ -194,8 +214,9 @@ const fmtTime = (ts: number | null | undefined): string => {
   if (!ts) return NA
   return new Date(ts).toLocaleTimeString()
 }
-const fmtTimeStr = (ts: string | null | undefined): string => {
-  if (!ts) return NA
+const fmtTimeStr = (ts: string | number | null | undefined): string => {
+  if (ts == null) return NA
+  if (typeof ts === "number") return new Date(ts).toLocaleTimeString()
   const parsed = Date.parse(ts)
   if (Number.isNaN(parsed)) return NA
   return new Date(parsed).toLocaleTimeString()
@@ -255,6 +276,22 @@ const badgeForTone = (tone: KpiTone) => {
   if (tone === "neutral") return "bg-muted text-muted-foreground"
   return "bg-muted text-muted-foreground"
 }
+
+const hasData = (m?: TimedMeta): boolean => !!m && m.ts > 0
+const staleTone = (m?: TimedMeta): KpiTone =>
+  hasData(m) ? (m?.isStale ? "warn" : "ok") : "neutral"
+const fmtAge = (m?: TimedMeta): string => {
+  if (!m || m.ageMs == null) return NA
+  if (m.ageMs < 1_000) return "just now"
+  if (m.ageMs < 60_000) return `${Math.floor(m.ageMs / 1_000)}s ago`
+  const mins = Math.floor(m.ageMs / 60_000)
+  if (mins < 120) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  return `${hours}h ago`
+}
+const liveLabel = (m?: TimedMeta): string =>
+  hasData(m) ? `${m?.isStale ? "stale" : "live"} · ${fmtAge(m)}` : NA
+const lastUpdateMeta = computed(() => commsMeta.value.system.lastUpdateEpochMs)
 </script>
 
 <template>
@@ -268,6 +305,9 @@ const badgeForTone = (tone: KpiTone) => {
       </div>
 
       <div class="flex flex-wrap gap-2">
+        <Badge variant="outline" :class="badgeForTone(staleTone(lastUpdateMeta))">
+          {{ liveLabel(lastUpdateMeta) }}
+        </Badge>
         <Badge variant="outline">{{ missionVehicle }}</Badge>
         <Badge variant="outline">{{ missionPhase }}</Badge>
         <Badge variant="outline">{{ missionPad }}</Badge>
