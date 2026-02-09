@@ -2,3 +2,4 @@ flask
 flask-socketio
 eventlet
 PyMySQL>=1.1.0
+mysql-replication>=1.0.15

@@ -19,6 +19,13 @@ services:
     ports:
     - "127.0.0.1:3306:3306"
     image: mariadb:12
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --binlog-row-metadata=FULL
+      - --log-bin-trust-function-creators=1
     restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: rootpass
