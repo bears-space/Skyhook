@@ -10,6 +10,7 @@ import {
   GamepadDirectional,
   HardDriveDownload,
   LayoutDashboard,
+  LogOut,
   Moon,
   RadioTower,
   SatelliteDish,
@@ -54,10 +55,13 @@ type NavItem = {
 const props = defineProps<{
   currentRouteName?: string | null
   isDark: boolean
+  userName?: string | null
+  userEmail?: string | null
 }>()
 
 const emit = defineEmits<{
   (event: "toggle-theme"): void
+  (event: "sign-out"): void
 }>()
 
 const router = useRouter()
@@ -105,6 +109,15 @@ const grouped = computed(() => {
 })
 
 const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
+const initials = computed(() => {
+  const source = props.userName ?? "SK"
+  return source
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join("") || "SK"
+})
 </script>
 
 <template>
@@ -140,11 +153,11 @@ const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
     <SidebarFooter>
       <div class="flex items-center gap-3 border-t border-sidebar-border/60 px-2 py-3">
         <Avatar class="h-10 w-10">
-          <AvatarFallback>SK</AvatarFallback>
+          <AvatarFallback>{{ initials }}</AvatarFallback>
         </Avatar>
         <div class="min-w-0 text-left">
-          <div class="truncate text-sm font-semibold">Skyhook Administrator</div>
-          <div class="truncate text-xs text-muted-foreground">username@tu-berlin.de</div>
+          <div class="truncate text-sm font-semibold">{{ props.userName ?? "Skyhook Operator" }}</div>
+          <div class="truncate text-xs text-muted-foreground">{{ props.userEmail ?? "operator@skyhook.local" }}</div>
         </div>
         <div class="ml-auto flex items-center gap-1">
           <Button
@@ -174,6 +187,11 @@ const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
               <DropdownMenuItem @click="router.push({ path: '/settings/system' })">
                 <Server class="h-4 w-4 text-muted-foreground" />
                 <span>System</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem class="text-destructive" @click="emit('sign-out')">
+                <LogOut class="h-4 w-4" />
+                <span>Sign out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

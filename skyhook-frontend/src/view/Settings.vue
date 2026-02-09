@@ -9,7 +9,7 @@ const router = useRouter()
 
 const scope = computed(() => (route.query.scope === "system" ? "system" : "user"))
 
-const setScope = (value: string) => {
+const setScope = (value: string | number) => {
   const next = value === "system" ? "system" : "user"
   if (next === scope.value) return
   router.replace({ path: "/settings", query: { ...route.query, scope: next } })

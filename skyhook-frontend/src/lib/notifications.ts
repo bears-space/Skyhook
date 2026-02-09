@@ -26,7 +26,7 @@ export type NotificationOptions = {
 type ToastOptions = {
   description?: string
   duration?: number
-  icon?: unknown
+  icon?: any
   closeButton?: boolean
   className?: string
   style?: Record<string, string>
