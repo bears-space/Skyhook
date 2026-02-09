@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router"
 import { h } from "vue"
 import Overview from "@/view/Overview.vue"
 import Narrowband from "@/view/Narrowband.vue"
+import Broadband from "@/view/Broadband.vue"
 
 const PlaceholderView = {
   name: "PlaceholderView",
@@ -18,6 +19,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/", name: "Overview", component: Overview },
   { path: "/data", name: "data", component: PlaceholderView },
   { path: "/narrowband", name: "Narrowband Communications", component: Narrowband },
+  { path: "/broadband", name: "Broadband Communications", component: Broadband },
   { path: "/ground-station", name: "ground-station", component: PlaceholderView },
   { path: "/pad-station", name: "pad-station", component: PlaceholderView },
   { path: "/engine", name: "engine", component: PlaceholderView },
