@@ -1,9 +1,14 @@
 import { defineStore } from "pinia"
 import { ref } from "vue"
 import { notify } from "@/lib/notifications"
+import { setSocketAuthToken, socket } from "@/socket"
 
 const AUTH_STORAGE_KEY = "skyhook-auth"
 const AUTH_EMAIL_STORAGE_KEY = "skyhook-auth-email"
+const AUTH_TOKEN_STORAGE_KEY = "skyhook-auth-token"
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:3000" : "")
 
 export type LoginPayload = {
   email: string
@@ -27,6 +32,7 @@ export const useAuthStore = defineStore("auth", () => {
   const isAuthenticated = ref(false)
   const userName = ref("Skyhook Administrator")
   const userEmail = ref("username@tu-berlin.de")
+  const token = ref<string | null>(null)
   const loginLoading = ref(false)
   const loginError = ref<string | null>(null)
   const hydrated = ref(false)
@@ -34,13 +40,17 @@ export const useAuthStore = defineStore("auth", () => {
   const initFromStorage = () => {
     if (hydrated.value) return
     const storedAuth = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (storedAuth === "true") {
+    const storedToken = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+    if (storedAuth === "true" && storedToken) {
       isAuthenticated.value = true
+      token.value = storedToken
       const savedEmail = localStorage.getItem(AUTH_EMAIL_STORAGE_KEY)
       if (savedEmail) {
         userEmail.value = savedEmail
         userName.value = deriveNameFromEmail(savedEmail)
       }
+      // ensure socket auth is hydrated for reconnect
+      setSocketAuthToken(storedToken)
     }
     hydrated.value = true
   }
@@ -54,17 +64,44 @@ export const useAuthStore = defineStore("auth", () => {
 
     loginLoading.value = true
     try {
-      await new Promise((resolve) => setTimeout(resolve, 450))
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        loginError.value = data.error || "Invalid credentials"
+        return false
+      }
+
+      const data = await response.json()
+      const receivedToken = data.token as string | undefined
+      if (!receivedToken) {
+        loginError.value = "No token returned from server."
+        return false
+      }
+
       isAuthenticated.value = true
       userEmail.value = email
       userName.value = deriveNameFromEmail(email)
+      token.value = receivedToken
+      setSocketAuthToken(receivedToken)
+      if (!socket.connected) {
+        socket.connect()
+      }
 
       if (remember) {
         localStorage.setItem(AUTH_STORAGE_KEY, "true")
         localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, email)
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, receivedToken)
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY)
         localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY)
+        localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
       }
 
       notify({
@@ -84,8 +121,12 @@ export const useAuthStore = defineStore("auth", () => {
 
   const signOut = () => {
     isAuthenticated.value = false
+    token.value = null
     localStorage.removeItem(AUTH_STORAGE_KEY)
     localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY)
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    setSocketAuthToken(undefined)
+    socket.disconnect()
     notify({ title: "Signed out", description: "Session closed.", variant: "info" })
   }
 
@@ -93,6 +134,7 @@ export const useAuthStore = defineStore("auth", () => {
     isAuthenticated,
     userName,
     userEmail,
+    token,
     loginLoading,
     loginError,
     hydrated,

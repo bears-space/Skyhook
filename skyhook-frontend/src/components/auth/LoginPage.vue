@@ -123,13 +123,18 @@ const handleSubmit = () => {
 
           <div class="space-y-3">
             <Button
-              class="w-full gap-2 text-base"
+              class="w-full gap-2 text-base relative"
               size="lg"
               :disabled="!canSubmit || loading"
               @click="handleSubmit"
             >
-              <Loader2 v-if="loading" class="size-4 animate-spin" />
-              <span>Enter Mission Console</span>
+              <Loader2
+                v-if="loading"
+                class="pointer-events-none absolute left-4 size-4 animate-spin"
+              />
+              <span :class="loading ? 'opacity-70' : ''">
+                {{ loading ? "Signing in..." : "Enter Mission Console" }}
+              </span>
             </Button>
 
             <Alert v-if="props.error" variant="destructive" class="border-red-500/40 bg-red-500/10 text-red-100">
