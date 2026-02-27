@@ -1,1 +1,4 @@
 /skyhook-backend/node_modules
+/__pycache__/
+skyhook-backend/database/__pycache__/
+skyhook-backend/__pycache__/

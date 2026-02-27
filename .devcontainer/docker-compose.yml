@@ -1,0 +1,48 @@
+services:
+  dev:
+    image: mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+    volumes:
+      - ..:/workspaces/Skyhook:cached
+    working_dir: /workspaces/Skyhook
+    command: sleep infinity
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: skyhook
+      DB_USER: skyhook
+      DB_PASS: skyhookpass
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    ports:
+    - "127.0.0.1:3306:3306"
+    image: mariadb:12
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --binlog-row-metadata=FULL
+      - --log-bin-trust-function-creators=1
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: skyhook
+      MARIADB_USER: skyhook
+      MARIADB_PASSWORD: skyhookpass
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+
+volumes:
+  mariadb-data:

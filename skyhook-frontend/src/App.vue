@@ -1,41 +1,38 @@
 <script setup lang="ts">
-import { RouterView, useRoute } from "vue-router"
+import { RouterView, useRoute, useRouter } from "vue-router"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
-import AppHeader from "@/components/layout/AppHeader.vue"
+import AppHeader from "./components/layout/AppHeader.vue"
 import AppSidebar from "@/components/layout/AppSidebar.vue"
 import StatusStrip from "@/components/layout/StatusStrip.vue"
 import { socket } from "@/socket"
 import { notify } from "@/lib/notifications"
 import { WifiOffIcon } from "lucide-vue-next"
+import { useCommsStore } from "@/stores/comms"
+import { storeToRefs } from "pinia"
+import { useAuthStore } from "@/stores/auth"
 
 const route = useRoute()
+const router = useRouter()
 const THEME_STORAGE_KEY = "skyhook-theme"
 const isDark = ref(false)
+const auth = useAuthStore()
+const { isAuthenticated, userName, userEmail } = storeToRefs(auth)
 
-const TOTAL_SECONDS = 5 * 60 * 60
-const remainingSeconds = ref(TOTAL_SECONDS)
+const comms = useCommsStore()
+const { nb, bb } = storeToRefs(comms)
 
-const formatRemainingTime = (seconds: number) => {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  return `T-${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+const formatBps = (bps: number | null | undefined): string => {
+  if (bps == null || Number.isNaN(bps)) return "n/a"
+  if (Math.abs(bps) >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mb/s`
+  if (Math.abs(bps) >= 1_000) return `${(bps / 1_000).toFixed(1)} kb/s`
+  return `${bps.toFixed(0)} b/s`
 }
 
-const timer = ref(formatRemainingTime(remainingSeconds.value))
-
-const tickTimer = () => {
-  if (remainingSeconds.value > 0) {
-    remainingSeconds.value -= 1
-  }
-  timer.value = formatRemainingTime(remainingSeconds.value)
-}
-
-const uplinkSpeed = ref("")
-const nbSpeed = ref("")
-const bbSpeed = ref("")
+const uplinkSpeed = computed(() => formatBps(nb.value.up.rateBps.value))
+const nbSpeed = computed(() => formatBps(nb.value.down.rateBps.value))
+const bbSpeed = computed(() => formatBps(bb.value.down.rateBps.value))
 const wsStatus = ref(socket.connected ? "Online" : "Offline")
 const wsBadgeClass = computed(() => {
   if (wsStatus.value === "Online") {
@@ -47,16 +44,6 @@ const wsBadgeClass = computed(() => {
   return "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
 })
 
-const formatSpeed = (minKb: number, maxKb: number) =>
-  `${(Math.random() * (maxKb - minKb) + minKb).toFixed(1)}kb/s`
-
-const updateMetrics = () => {
-  tickTimer()
-  uplinkSpeed.value = formatSpeed(30, 140)
-  nbSpeed.value = formatSpeed(90, 260)
-  bbSpeed.value = `${(Math.random() * 6).toFixed(1)}mb/s`
-}
-
 const applyTheme = (dark: boolean) => {
   isDark.value = dark
   const root = document.documentElement
@@ -66,19 +53,27 @@ const applyTheme = (dark: boolean) => {
 
 const toggleTheme = () => applyTheme(!isDark.value)
 
-let intervalId: ReturnType<typeof setInterval> | undefined
+const handleSignOut = () => {
+  auth.signOut()
+  router.replace({ path: "/login", query: { redirect: route.fullPath } })
+}
 
 onMounted(() => {
   const storedPreference = localStorage.getItem(THEME_STORAGE_KEY)
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
   applyTheme(storedPreference ? storedPreference === "dark" : prefersDark)
+  auth.initFromStorage()
 })
 
 onMounted(() => {
   let hasShownDisconnect = false
 
   const showDisconnected = () => {
-    if (!hasShownDisconnect) {
+    if (!hasShownDisconnect || !isAuthenticated.value) {
+      if (!isAuthenticated.value) {
+        hasShownDisconnect = false
+        return
+      }
       notify({
         title: "Disconnected from server",
         description: "You have been disconnected from the server. Please check your network connection, and validate that the server is running.",
@@ -90,7 +85,7 @@ onMounted(() => {
   }
 
   const showReconnected = () => {
-    if (hasShownDisconnect) {
+    if (hasShownDisconnect && isAuthenticated.value) {
       notify({
         title: "Connection restored",
         description: "Reconnected to the server.",
@@ -114,9 +109,6 @@ onMounted(() => {
     wsStatus.value = "Reconnecting..."
   }
 
-  updateMetrics()
-  intervalId = setInterval(updateMetrics, 1000)
-
   wsStatus.value = socket.connected ? "Online" : "Connecting..."
   socket.on("connect", setOnline)
   socket.on("disconnect", setOffline)
@@ -127,9 +119,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (intervalId) {
-    clearInterval(intervalId)
-  }
   socket.off("connect")
   socket.off("disconnect")
   socket.off("connect_error")
@@ -140,33 +129,41 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SidebarProvider class="h-svh overflow-hidden">
-    <AppSidebar
-      :current-route-name="route.name ? String(route.name) : null"
-      :is-dark="isDark"
-      @toggle-theme="toggleTheme"
-    />
+  <div class="h-svh w-full bg-background text-foreground">
+    <RouterView v-slot="{ Component, route: currentRoute }">
+      <component :is="Component" v-if="currentRoute.meta?.layout === 'auth'" />
 
-    <SidebarInset class="h-svh pb-12 flex flex-col bg-muted/20 overflow-hidden">
-      <!-- top header bar -->
-      <AppHeader
-        :route-name="route.name ? String(route.name) : null"
-        :timer="timer"
-        :ws-status="wsStatus"
-        :ws-badge-class="wsBadgeClass"
-      />
+      <SidebarProvider v-else class="h-svh overflow-hidden">
+        <AppSidebar
+          :current-route-name="route.name ? String(route.name) : null"
+          :is-dark="isDark"
+          :user-name="userName"
+          :user-email="userEmail"
+          @toggle-theme="toggleTheme"
+          @sign-out="handleSignOut"
+        />
 
-      <!-- page content wrapper -->
-      <main class="flex-1 min-h-0 overflow-auto">
-        <div class="mx-auto max-w-6xl p-4 md:p-6">
-          <RouterView />
-        </div>
-      </main>
-    </SidebarInset>
+        <SidebarInset class="h-svh pb-12 flex flex-col bg-muted/20 overflow-hidden">
+          <!-- top header bar -->
+          <AppHeader
+            :route-name="route.name ? String(route.name) : null"
+            :ws-status="wsStatus"
+            :ws-badge-class="wsBadgeClass"
+          />
 
-    <!-- bottom status strip: slightly more “polished” -->
-    <StatusStrip :uplink-speed="uplinkSpeed" :nb-speed="nbSpeed" :bb-speed="bbSpeed" />
+          <!-- page content wrapper -->
+          <main class="flex-1 min-h-0 overflow-auto">
+            <div class="mx-auto max-w-6xl p-4 md:p-6">
+              <component :is="Component" />
+            </div>
+          </main>
+        </SidebarInset>
 
-    <Toaster :theme="isDark ? 'dark' : 'light'" rich-colors/> <!-- why is this dark mode shit even needed, shouldnt it do that automatically? -->
-  </SidebarProvider>
+        <!-- bottom status strip: slightly more “polished” -->
+        <StatusStrip :uplink-speed="uplinkSpeed" :nb-speed="nbSpeed" :bb-speed="bbSpeed" />
+      </SidebarProvider>
+    </RouterView>
+
+    <Toaster :theme="isDark ? 'dark' : 'light'" rich-colors />
+  </div>
 </template>
