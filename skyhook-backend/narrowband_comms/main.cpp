@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <format>
 
 std::queue<std::string> event_queue;
 std::mutex queue_mutex;
@@ -38,62 +39,76 @@ PiHal* hal = new PiHal(0);
 // BUSY pin:  24
 LLCC68 radio = new Module(hal, 8, 25, 23, 24);
 
-// TODO: remove the weird c and c++ mix
-// the entry point for the program
-int main(int argc, char** argv) {
 
-  // init socketio socketio client
-  // TODO: pack the init code into seperate functions
-  sio::client c;
+void bind_events(sio:client &c) {
 
-  c.socket()->on("command", [&](sio::event &ev) {
+    c.set_open_listener([&]() {
+        std::cout << "Connected to Python server" << std::endl;
+    });
+
+    c.set_close_listener([&]() {
+        std::cout << "Disconnected from server" << std::endl;
+    });
+
+    c.socket()->on("command", [&](sio::event &ev) {
         std::string cmd = ev.get_message()->get_map()["cmd"]->get_string();
         enqueue_event(cmd); // thread-safe push
     });
 
-  c.connect("http://localhost:5000");
+}
 
-  // initialize just like with Arduino
-  printf("[LLCC68] Initializing ... ");
-  int state = radio.beginFSK();
-  if (state != RADIOLIB_ERR_NONE) {
-    printf("failed, code %d\n", state);
-    return(1);
-  }
-  printf("success!\n");
+int init_radio(){
 
-  // RXEN pin: 12
-  // TXEN is conncted to dio2
-  radio.setRfSwitchPins(12, RADIOLIB_NC);
+}
 
-  // loop forever
-  int count = 0;
-  while(1) {
+int main() {
 
-    auto maybe_cmd = get_next_event();
-    if (maybe_cmd) {
-        std::string cmd = *maybe_cmd;
-        std::cout << "Processing command in main loop: " << cmd << std::endl;
+    // init socketio socketio client
+    sio::client c;
+    bind_events(c);
+    c.connect("http://localhost:3000");
 
-        // Do some sending here
-        printf("[LLCC68] Transmitting packet ... ");
-        char str[64];
-        sprintf(str, "Hello World! #%d", count++); // obviously this should send the command instead of hello world
-        state = radio.transmit(str);
-        if(state == RADIOLIB_ERR_NONE) {
-          // the packet was successfully transmitted
-          printf("success!\n");
+    // initialize radio
+    std::cout << "[LLCC68] Initializing ... ";
+    int state = radio.beginFSK();
+    if (state != RADIOLIB_ERR_NONE) {
+        std::cout << "failed, code " << static_cast<int>state << std::endl;
+        return(1);
+    }
+    std::cout << "success!" << std::endl;
 
-        } else {
-          printf("failed, code %d\n", state);
+    // RXEN pin: 12
+    // TXEN is conncted to dio2
+    radio.setRfSwitchPins(12, RADIOLIB_NC);
 
+    // loop forever
+    int count = 0;
+    while(1) {
+
+        auto maybe_cmd = get_next_event();
+        if (maybe_cmd) {
+            std::string cmd = *maybe_cmd;
+            std::cout << "Processing command in main loop: " << cmd << std::endl;
+
+            // Do some sending here
+            std::cout << "[LLCC68] Transmitting packet ... ";
+            char str[64];
+            auto result = std::format_to_n(str, sizeof(str) - 1, "Hello World! #{}", count++);
+            str[result.size] = '\0';
+            state = radio.transmit(str);
+            if(state == RADIOLIB_ERR_NONE) {
+                // the packet was successfully transmitted
+                std::cout << "success!" << std::endl;
+
+            } else {
+                std::cout << "failed, code " << static_cast<int> state << std::endl;
+
+            }
         }
+
+      // TODO: add receiving
+      hal->delay(1000);
     }
 
-    // TODO: add receiving
-    hal->delay(1000);
-
-  }
-
-  return(0);
+    return(0);
 }
