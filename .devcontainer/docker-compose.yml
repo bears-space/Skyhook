@@ -34,6 +34,7 @@ services:
       MARIADB_PASSWORD: skyhookpass
     volumes:
       - mariadb-data:/var/lib/mysql
+      - ./db-init:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]

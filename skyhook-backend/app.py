@@ -261,21 +261,3 @@ def handle_subscribe_all(data=None):
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=3000)
 
-'''
-WICHTIG: Dieses SQL-Statement muss einmalig in deiner MySQL/MariaDB ausgeführt werden, damit die CDC-Funktionalität korrekt funktioniert.
-
--- als root (oder User mit GRANT OPTION) ausführen
-
-CREATE USER IF NOT EXISTS 'cdc_user'@'%' IDENTIFIED BY 'cdc_pass';
-
--- Rechte für Binlog/CDC:
-GRANT REPLICATION SLAVE, REPLICATION CLIENT, BINLOG MONITOR ON *.* TO 'cdc_user'@'%';
-
--- Read access auf deine DB (Snapshot queries, Lookups, etc.)
-GRANT SELECT ON `skyhook`.* TO 'cdc_user'@'%';
-
-FLUSH PRIVILEGES;
-
--- Optional: check
-SHOW GRANTS FOR 'cdc_user'@'%';
-'''
