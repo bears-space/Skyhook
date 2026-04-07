@@ -1,9 +1,7 @@
 import { io, type Socket } from "socket.io-client"
 
 const socketUrl =
-  import.meta.env.VITE_WS_URL ||
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:3000" : "")
+  import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL || ""
 
 const getToken = () => localStorage.getItem("skyhook-auth-token") || undefined
 

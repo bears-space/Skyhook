@@ -8,8 +8,7 @@ const AUTH_EMAIL_STORAGE_KEY = "skyhook-auth-email"
 const AUTH_TOKEN_STORAGE_KEY = "skyhook-auth-token"
 const AUTH_ROLES_STORAGE_KEY = "skyhook-auth-roles"
 const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:3000" : "")
+  import.meta.env.VITE_API_URL || ""
 
 export type LoginPayload = {
   email: string

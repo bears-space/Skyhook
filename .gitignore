@@ -2,3 +2,4 @@
 /__pycache__/
 skyhook-backend/database/__pycache__/
 skyhook-backend/__pycache__/
+.devcontainer/data/

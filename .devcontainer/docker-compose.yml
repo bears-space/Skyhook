@@ -33,7 +33,7 @@ services:
       MARIADB_USER: skyhook
       MARIADB_PASSWORD: skyhookpass
     volumes:
-      - mariadb-data:/var/lib/mysql
+      - ./data/mariadb:/var/lib/mysql
       - ./db-init:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
@@ -42,7 +42,3 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-
-
-volumes:
-  mariadb-data:
