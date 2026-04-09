@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Checkbox } from "@/components/ui/checkbox"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import {
   Dialog,
   DialogContent,
@@ -37,6 +36,10 @@ const props = defineProps<{
 type RoleName = "admin" | "engineer" | "operator"
 
 const availableRoles: RoleName[] = ["admin", "engineer", "operator"]
+const normalizeRole = (value?: string | null): RoleName => {
+  const normalized = String(value ?? "").toLowerCase() as RoleName
+  return availableRoles.includes(normalized) ? normalized : "operator"
+}
 const searchFilter: FilterFn<UserRecord> = (row, _columnId, value) => {
   const haystack = `${row.original.username} ${row.original.email || ""}`.toLowerCase()
   return haystack.includes(String(value ?? "").toLowerCase())
@@ -61,7 +64,7 @@ const form = reactive({
   username: "",
   email: "",
   password: "",
-  roles: [] as RoleName[],
+  role: "operator" as RoleName,
   is_active: true,
 })
 
@@ -71,7 +74,7 @@ const resetForm = () => {
   form.username = ""
   form.email = ""
   form.password = ""
-  form.roles = ["operator"]
+  form.role = "operator"
   form.is_active = true
 }
 
@@ -111,7 +114,7 @@ const startEdit = (user: UserRecord) => {
   form.username = user.username
   form.email = user.email || ""
   form.password = ""
-  form.roles = (user.roles as RoleName[]) ?? []
+  form.role = normalizeRole(user.roles?.[0])
   form.is_active = !!user.is_active
   formError.value = null
   formOpen.value = true
@@ -143,7 +146,7 @@ const submitForm = async () => {
     const payload: any = {
       username: form.username.trim(),
       email: form.email.trim(),
-      roles: form.roles,
+      roles: [form.role],
       is_active: form.is_active,
     }
     if (form.password) {
@@ -204,16 +207,6 @@ const formatDate = (value?: string | null) => {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return value
   return dt.toLocaleString()
-}
-
-const toggleRole = (role: RoleName, checked?: boolean) => {
-  const normalized = role.toLowerCase() as RoleName
-  const shouldAdd = checked === undefined ? !form.roles.includes(normalized) : checked
-  if (shouldAdd) {
-    form.roles = Array.from(new Set([...form.roles, normalized]))
-  } else {
-    form.roles = form.roles.filter((r) => r !== normalized)
-  }
 }
 
 const columns = computed<ColumnDef<UserRecord>[]>(() => [
@@ -331,7 +324,7 @@ watch(() => props.token, (next) => next && loadUsers())
         <DialogHeader>
           <DialogTitle>{{ editId === null ? "Create user" : "Edit user" }}</DialogTitle>
           <DialogDescription>
-            Provide credentials and roles. Password is required when creating; optional when editing.
+            Provide credentials and a role. Password is required when creating; optional when editing.
           </DialogDescription>
         </DialogHeader>
 
@@ -355,24 +348,12 @@ watch(() => props.token, (next) => next && loadUsers())
             />
           </div>
           <div class="space-y-2">
-            <Label>Roles</Label>
-            <div class="grid grid-cols-2 gap-2">
-              <label
-                v-for="role in availableRoles"
-                :key="role"
-                class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:border-primary"
-              >
-                <Checkbox :checked="form.roles.includes(role)" @update:checked="(v: boolean) => toggleRole(role, !!v)" />
-                <span class="capitalize">{{ role }}</span>
-              </label>
-            </div>
-          </div>
-          <div class="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-            <div class="space-y-0.5">
-              <div class="text-sm font-medium">Active</div>
-              <div class="text-xs text-muted-foreground">Disable to revoke access without deleting.</div>
-            </div>
-            <Switch v-model:checked="form.is_active" />
+            <Label for="role">Role</Label>
+            <NativeSelect id="role" v-model="form.role">
+              <NativeSelectOption v-for="role in availableRoles" :key="role" :value="role">
+                {{ role.charAt(0).toUpperCase() + role.slice(1) }}
+              </NativeSelectOption>
+            </NativeSelect>
           </div>
           <div v-if="formError" class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {{ formError }}

@@ -135,6 +135,25 @@ def _user_count(cfg: DBConfig) -> int:
         conn.close()
 
 
+def _active_admin_count(cfg: DBConfig) -> int:
+    conn = _db_conn(cfg)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT u.id) AS n
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                JOIN roles r ON r.id = ur.role_id
+                WHERE u.is_active = 1 AND LOWER(r.name) = 'admin'
+                """
+            )
+            row = cur.fetchone()
+            return int(row["n"]) if row else 0
+    finally:
+        conn.close()
+
+
 def _fetch_user(cfg: DBConfig, identifier: str) -> Optional[Dict]:
     sql = """SELECT id, username, email, password_hash, is_active
              FROM users
@@ -176,8 +195,17 @@ def _fetch_roles(cfg: DBConfig, user_id: int) -> List[str]:
 def verify_credentials(cfg: DBConfig, identifier: str, password: str) -> Tuple[Optional[Dict], Optional[List[str]]]:
     user = _fetch_user(cfg, identifier)
     if not user or not user.get("is_active"):
-        # Bootstrap path: if no users exist, allow default admin login
-        if _user_count(cfg) == 0:
+        # Bootstrap path: keep the default admin available until the DB has
+        # at least one active admin user, otherwise an operator-only first user
+        # can permanently lock user management.
+        user_count = _user_count(cfg)
+        active_admin_count = _active_admin_count(cfg)
+        if user_count == 0 or active_admin_count == 0:
+            if active_admin_count == 0:
+                print(
+                    f"[auth] No active admin users found in database. "
+                    f"Bootstrap admin login remains enabled (users={user_count})."
+                )
             default_user = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
             default_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@local")
             default_pass = os.getenv("DEFAULT_ADMIN_PASSWORD", "letmein")
@@ -252,6 +280,7 @@ def _load_user_with_roles(conn: pymysql.connections.Connection, user_id: int, cf
         GROUP BY u.id
         LIMIT 1
     """
+    print(f"Loading user ID {user_id} with roles using SQL: {sql}")
     try:
         with conn.cursor() as cur:
             cur.execute(sql, (user_id,))
@@ -259,6 +288,7 @@ def _load_user_with_roles(conn: pymysql.connections.Connection, user_id: int, cf
             if not row:
                 return None
             roles = row.get("roles") or ""
+            print(f"Loaded user ID {user_id} with roles: {roles}")
             return {
                 "id": int(row["id"]),
                 "username": row.get("username"),
@@ -348,6 +378,7 @@ def create_user(
             user_id = int(cur.lastrowid)
 
             role_ids = _ensure_roles(conn, roles or [])
+            print(f"Assigned role IDs {role_ids} to new user {username} (ID {user_id})")
             for rid in role_ids:
                 cur.execute(
                     "INSERT INTO user_roles (user_id, role_id) VALUES (%s, %s)",
