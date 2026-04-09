@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/dialog"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -186,10 +185,11 @@ const toggleActive = async (user: UserRecord) => {
 }
 
 const confirmDelete = async () => {
-  if (!props.token || !deleting.value) return
+  const target = deleting.value
+  if (!props.token || !target) return
   try {
-    await deleteUserApi(props.token, deleting.value.id)
-    removeLocal(deleting.value.id)
+    await deleteUserApi(props.token, target.id)
+    removeLocal(target.id)
     await loadUsers()
     notify({ title: "User deleted", variant: "success" })
   } catch (err: any) {
@@ -396,9 +396,7 @@ watch(() => props.token, (next) => next && loadUsers())
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel @click="deleting = null">Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="confirmDelete">
-            Delete
-          </AlertDialogAction>
+          <Button variant="destructive" @click="confirmDelete">Delete</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

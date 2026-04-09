@@ -171,31 +171,31 @@ const piiScrubbing = ref(true)
       </Button>
     </div>
 
-    <Card v-if="!selectedCategory">
-      <CardHeader class="pb-4">
+    <Card v-if="!selectedCategory" class="overflow-hidden">
+      <CardHeader class="pb-3">
         <CardTitle>Choose a settings domain</CardTitle>
         <CardDescription>Select where you want to make changes before editing values.</CardDescription>
       </CardHeader>
-      <CardContent class="pt-0">
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <CardContent class="pb-6 pt-1">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Button
             v-for="category in categories"
             :key="category.id"
             variant="outline"
-            class="flex h-full w-full items-start justify-start gap-3 border-dashed"
+            class="flex h-full min-h-[96px] w-full cursor-pointer items-center justify-start gap-4 rounded-xl border-dashed whitespace-normal px-5 py-4 text-left"
             @click="selectedCategoryId = category.id"
           >
             <span
               :class="[
-                'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br text-white shadow-sm',
+                'flex size-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white shadow-sm',
                 category.accent,
               ]"
             >
               <component :is="category.icon" class="h-5 w-5" />
             </span>
-            <span class="text-left">
+            <span class="min-w-0 space-y-0.5 text-left">
               <div class="font-semibold leading-tight">{{ category.label }}</div>
-              <div class="text-xs text-muted-foreground">{{ category.description }}</div>
+              <div class="text-sm leading-snug text-muted-foreground">{{ category.description }}</div>
             </span>
           </Button>
         </div>
