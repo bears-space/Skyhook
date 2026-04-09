@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import type { Component } from "vue"
-import { computed, ref } from "vue"
-import { Database, PlugZap, RadioTower, Rocket, ShieldCheck, Users } from "lucide-vue-next"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { ArrowLeft, Database, PlugZap, RadioTower, Rocket, ShieldCheck, Users } from "lucide-vue-next"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Kbd } from "@/components/ui/kbd"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { useAuthStore } from "@/stores/auth"
 import UserAdminPanel from "@/components/settings/UserAdminPanel.vue"
-
-const breadcrumbs = ["Settings", "System"]
 
 type SettingsCategory = {
   id: string
@@ -68,9 +67,44 @@ const categories: SettingsCategory[] = [
 
 const selectedCategoryId = ref<string | null>(null)
 const selectedCategory = computed(() => categories.find((category) => category.id === selectedCategoryId.value) ?? null)
+const pageTitle = computed(() => selectedCategory.value?.label ?? "System Settings")
+const pageDescription = computed(
+  () => selectedCategory.value?.description ?? "Start by choosing which type of system surface you want to adjust.",
+)
 const auth = useAuthStore()
 auth.initFromStorage()
 const isAdmin = computed(() => auth.userRoles.includes("admin"))
+
+const clearSelection = () => {
+  selectedCategoryId.value = null
+}
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (
+    event.key !== "Escape" ||
+    !selectedCategoryId.value ||
+    event.defaultPrevented ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  ) {
+    return
+  }
+
+  if (document.querySelector('[role="dialog"][data-state="open"]')) return
+
+  event.preventDefault()
+  clearSelection()
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handleKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleKeydown)
+})
 
 // Rocket
 const flightProfile = ref<"launch" | "test" | "safe">("launch")
@@ -122,14 +156,19 @@ const piiScrubbing = ref(true)
 
 <template>
   <div class="space-y-6">
-    <div class="space-y-1">
-      <div class="text-xs uppercase tracking-wide text-muted-foreground">
-        {{ breadcrumbs.join(" / ") }}
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="space-y-1">
+        <div class="text-sm font-medium text-muted-foreground">System settings</div>
+        <h1 class="text-2xl font-semibold tracking-tight">{{ pageTitle }}</h1>
+        <p class="text-sm text-muted-foreground">
+          {{ pageDescription }}
+        </p>
       </div>
-      <h1 class="text-2xl font-semibold tracking-tight">System Settings</h1>
-      <p class="text-sm text-muted-foreground">
-        Start by choosing which type of system surface you want to adjust.
-      </p>
+      <Button v-if="selectedCategory" variant="ghost" size="sm" class="gap-2" @click="clearSelection">
+        <ArrowLeft class="h-4 w-4" />
+        Back
+        <Kbd>Esc</Kbd>
+      </Button>
     </div>
 
     <Card v-if="!selectedCategory">
@@ -163,17 +202,7 @@ const piiScrubbing = ref(true)
       </CardContent>
     </Card>
 
-    <div v-if="selectedCategory" class="space-y-4">
-      <div class="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
-        <div>
-          <div class="text-xs uppercase tracking-wide text-muted-foreground">Editing</div>
-          <div class="font-semibold leading-tight">{{ selectedCategory.label }} domain</div>
-          <div class="text-xs text-muted-foreground">Settings below are scoped to this domain.</div>
-        </div>
-        <Button variant="ghost" size="sm" @click="selectedCategoryId = null">Change selection</Button>
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
+    <div v-if="selectedCategory" class="grid gap-4 md:grid-cols-2">
         <Card v-if="selectedCategory.id === 'rocket'">
           <CardHeader>
             <CardTitle>Launch Controls</CardTitle>
@@ -443,7 +472,6 @@ const piiScrubbing = ref(true)
             </div>
           </CardContent>
         </Card>
-      </div>
     </div>
   </div>
 </template>
