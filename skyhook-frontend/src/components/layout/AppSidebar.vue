@@ -41,6 +41,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { cn } from "@/lib/utils"
+import { useSidebar } from "@/components/ui/sidebar"
 import logoDark from "@/assets/maxres_light.png"
 import logoLight from "@/assets/maxres_dark.png"
 
@@ -55,6 +57,8 @@ type NavItem = {
 const props = defineProps<{
   currentRouteName?: string | null
   isDark: boolean
+  compact: boolean
+  showLabels: boolean
   userName?: string | null
   userEmail?: string | null
 }>()
@@ -65,6 +69,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const { isMobile } = useSidebar()
 
 const items: NavItem[] = [
   { section: null, title: "Overview", name: "Overview", to: "/", icon: LayoutDashboard },
@@ -109,6 +114,7 @@ const grouped = computed(() => {
 })
 
 const logoSrc = computed(() => (props.isDark ? logoDark : logoLight))
+const showTextLabels = computed(() => props.showLabels || isMobile.value)
 const initials = computed(() => {
   const source = props.userName ?? "SK"
   return source
@@ -121,27 +127,32 @@ const initials = computed(() => {
 </script>
 
 <template>
-  <Sidebar variant="inset" collapsible="none">
-    <SidebarHeader class="px-2 py-2">
-      <div class="flex items-center gap-2 px-2">
-        <img :src="logoSrc" alt="Skyhook logo" class="h-8 w-auto" />
-        <div class="text-sm font-semibold">Skyhook Interface</div>
+  <Sidebar variant="inset" :collapsible="props.showLabels ? 'none' : 'icon'">
+    <SidebarHeader :class="cn(props.compact ? 'px-1.5 py-1.5' : 'px-2 py-2')">
+      <div :class="cn('flex items-center px-2', showTextLabels ? 'gap-2' : 'justify-center px-0')">
+        <img :src="logoSrc" alt="Skyhook logo" :class="cn(props.compact ? 'h-7 w-auto' : 'h-8 w-auto')" />
+        <div v-if="showTextLabels" class="text-sm font-semibold">Skyhook Interface</div>
       </div>
     </SidebarHeader>
 
     <SidebarContent>
       <SidebarGroup v-for="group in grouped" :key="group.section ?? '__top__'">
-        <SidebarGroupLabel v-if="group.section !== null">
+        <SidebarGroupLabel v-if="group.section !== null && showTextLabels">
           {{ group.section }}
         </SidebarGroupLabel>
 
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in group.items" :key="item.to + ':' + item.title">
-              <SidebarMenuButton :is-active="props.currentRouteName === item.name" as-child>
+              <SidebarMenuButton
+                :is-active="props.currentRouteName === item.name"
+                :size="props.compact ? 'sm' : 'default'"
+                :tooltip="showTextLabels ? undefined : item.title"
+                as-child
+              >
                 <RouterLink :to="item.to">
                   <component :is="item.icon" />
-                  <span>{{ item.title }}</span>
+                  <span v-if="showTextLabels">{{ item.title }}</span>
                 </RouterLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -151,15 +162,26 @@ const initials = computed(() => {
     </SidebarContent>
 
     <SidebarFooter>
-      <div class="flex items-center gap-3 border-t border-sidebar-border/60 px-2 py-3">
-        <Avatar class="h-10 w-10">
+      <div
+        :class="
+          cn(
+            'border-t border-sidebar-border/60',
+            showTextLabels
+              ? props.compact
+                ? 'flex items-center gap-2 px-1.5 py-2.5'
+                : 'flex items-center gap-3 px-2 py-3'
+              : 'flex flex-col items-center gap-2 px-1 py-3',
+          )
+        "
+      >
+        <Avatar :class="cn(props.compact ? 'h-9 w-9' : 'h-10 w-10')">
           <AvatarFallback>{{ initials }}</AvatarFallback>
         </Avatar>
-        <div class="min-w-0 text-left">
+        <div v-if="showTextLabels" class="min-w-0 text-left">
           <div class="truncate text-sm font-semibold">{{ props.userName ?? "Skyhook Operator" }}</div>
           <div class="truncate text-xs text-muted-foreground">{{ props.userEmail ?? "operator@skyhook.local" }}</div>
         </div>
-        <div class="ml-auto flex items-center gap-1">
+        <div :class="cn(showTextLabels ? 'ml-auto flex items-center gap-1' : 'flex flex-col items-center gap-1')">
           <Button
             variant="ghost"
             size="icon"

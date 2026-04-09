@@ -1,23 +1,71 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { computed, reactive } from "vue"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import { notify } from "@/lib/notifications"
+import {
+  LANDING_PAGE_OPTIONS,
+  type UserPreferencesSnapshot,
+  useUserPreferencesStore,
+} from "@/stores/userPreferences"
 
 const breadcrumbs = ["Settings", "User"]
 
-const themePreference = ref<"system" | "light" | "dark">("system")
-const compactSidebar = ref(false)
-const showSidebarLabels = ref(true)
-const defaultLanding = ref("overview")
-const notificationLevel = ref<"all" | "critical" | "silent">("all")
-const notificationSound = ref(true)
-const telemetryAlerts = ref(true)
-const quietHours = ref("22:00-07:00")
-const callsign = ref("Skyhook Operator")
+const preferences = useUserPreferencesStore()
+preferences.initFromStorage()
+
+const snapshot = (): UserPreferencesSnapshot => preferences.snapshot()
+
+const form = reactive<UserPreferencesSnapshot>(snapshot())
+const savedPreferences = computed(() => snapshot())
+const formError = computed(() => {
+  if (!form.callsign.trim()) {
+    return "Callsign is required."
+  }
+
+  if (!LANDING_PAGE_OPTIONS.some((option) => option.value === form.defaultLanding)) {
+    return "Choose a valid landing page."
+  }
+
+  return null
+})
+
+const isDirty = computed(
+  () => JSON.stringify(form) !== JSON.stringify(savedPreferences.value),
+)
+
+const resetDraft = () => {
+  Object.assign(form, savedPreferences.value)
+}
+
+const saveChanges = () => {
+  if (formError.value) {
+    notify({
+      title: "Unable to save settings",
+      description: formError.value,
+      variant: "destructive",
+      channel: "user",
+    })
+    return
+  }
+
+  preferences.replacePreferences({
+    ...form,
+    callsign: form.callsign.trim(),
+    quietHours: form.quietHours.trim(),
+  })
+  resetDraft()
+  notify({
+    title: "Preferences updated",
+    description: "Your user settings were saved to this browser.",
+    variant: "success",
+    channel: "user",
+  })
+}
 </script>
 
 <template>
@@ -41,7 +89,7 @@ const callsign = ref("Skyhook Operator")
         <CardContent class="space-y-4">
           <div class="space-y-2">
             <Label for="theme-preference">Theme preference</Label>
-            <NativeSelect id="theme-preference" v-model="themePreference">
+            <NativeSelect id="theme-preference" v-model="form.themePreference">
               <NativeSelectOption value="system">System</NativeSelectOption>
               <NativeSelectOption value="light">Light</NativeSelectOption>
               <NativeSelectOption value="dark">Dark</NativeSelectOption>
@@ -51,60 +99,30 @@ const callsign = ref("Skyhook Operator")
           <div class="flex items-center justify-between gap-3">
             <div class="space-y-1">
               <Label for="compact-sidebar">Compact sidebar</Label>
-              <p class="text-xs text-muted-foreground">Reduce padding for dense navigation.</p>
+              <p class="text-xs text-muted-foreground">Use a denser sidebar layout.</p>
             </div>
-            <Switch id="compact-sidebar" v-model:checked="compactSidebar" />
+            <Switch id="compact-sidebar" v-model:checked="form.compactSidebar" />
           </div>
 
           <div class="flex items-center justify-between gap-3">
             <div class="space-y-1">
               <Label for="sidebar-labels">Sidebar labels</Label>
-              <p class="text-xs text-muted-foreground">Show text labels under icons.</p>
+              <p class="text-xs text-muted-foreground">Collapse the sidebar to icons when labels are off.</p>
             </div>
-            <Switch id="sidebar-labels" v-model:checked="showSidebarLabels" />
+            <Switch id="sidebar-labels" v-model:checked="form.showSidebarLabels" />
           </div>
 
           <div class="space-y-2">
             <Label for="default-landing">Default landing page</Label>
-            <Input id="default-landing" v-model="defaultLanding" placeholder="overview" />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-          <CardDescription>Alert routing for your session.</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="space-y-2">
-            <Label for="notification-level">Notification level</Label>
-            <NativeSelect id="notification-level" v-model="notificationLevel">
-              <NativeSelectOption value="all">All alerts</NativeSelectOption>
-              <NativeSelectOption value="critical">Critical only</NativeSelectOption>
-              <NativeSelectOption value="silent">Silent mode</NativeSelectOption>
+            <NativeSelect id="default-landing" v-model="form.defaultLanding">
+              <NativeSelectOption
+                v-for="option in LANDING_PAGE_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </NativeSelectOption>
             </NativeSelect>
-          </div>
-
-          <div class="flex items-center justify-between gap-3">
-            <div class="space-y-1">
-              <Label for="notification-sound">Notification sounds</Label>
-              <p class="text-xs text-muted-foreground">Play sound on critical events.</p>
-            </div>
-            <Switch id="notification-sound" v-model:checked="notificationSound" />
-          </div>
-
-          <div class="flex items-center justify-between gap-3">
-            <div class="space-y-1">
-              <Label for="telemetry-alerts">Telemetry anomaly alerts</Label>
-              <p class="text-xs text-muted-foreground">Surface unusual telemetry spikes.</p>
-            </div>
-            <Switch id="telemetry-alerts" v-model:checked="telemetryAlerts" />
-          </div>
-
-          <div class="space-y-2">
-            <Label for="quiet-hours">Quiet hours</Label>
-            <Input id="quiet-hours" v-model="quietHours" placeholder="22:00-07:00" />
           </div>
         </CardContent>
       </Card>
@@ -117,11 +135,17 @@ const callsign = ref("Skyhook Operator")
         <CardContent class="space-y-4">
           <div class="space-y-2">
             <Label for="callsign">Callsign</Label>
-            <Input id="callsign" v-model="callsign" placeholder="Skyhook Operator" />
+            <Input id="callsign" v-model="form.callsign" placeholder="Skyhook Operator" />
+          </div>
+          <div
+            v-if="formError"
+            class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {{ formError }}
           </div>
           <div class="flex gap-2">
-            <Button variant="secondary">Reset</Button>
-            <Button>Save changes</Button>
+            <Button variant="secondary" :disabled="!isDirty" @click="resetDraft">Reset</Button>
+            <Button :disabled="!isDirty || !!formError" @click="saveChanges">Save changes</Button>
           </div>
         </CardContent>
       </Card>

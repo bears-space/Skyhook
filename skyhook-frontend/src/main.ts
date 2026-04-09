@@ -15,7 +15,7 @@ import { notify } from "./lib/notifications"
 const app = createApp(App)
 const pinia = createPinia()
 
-app.use(router).use(pinia).use(VueApexCharts)
+app.use(pinia).use(router).use(VueApexCharts)
 app.mount("#app")
 
 // start derived timer ticks (based on launch.t0EpochMs)

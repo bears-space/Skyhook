@@ -7,6 +7,7 @@ import SettingsUserView from "@/view/SettingsUser.vue"
 import SettingsSystemView from "@/view/SettingsSystem.vue"
 import LoginView from "@/view/LoginView.vue"
 import { useAuthStore } from "@/stores/auth"
+import { useUserPreferencesStore } from "@/stores/userPreferences"
 
 const PlaceholderView = {
   name: "PlaceholderView",
@@ -44,17 +45,24 @@ export const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const auth = useAuthStore()
+  const preferences = useUserPreferencesStore()
   auth.initFromStorage()
+  preferences.initFromStorage()
 
   const authed = !!auth.isAuthenticated
+  const preferredLanding = preferences.defaultLanding || "/"
 
   if (to.meta.requiresAuth && !authed) {
     return next({ path: "/login", query: { redirect: to.fullPath } })
   }
 
   if (to.path === "/login" && authed) {
-    const redirect = (to.query.redirect as string) || "/"
+    const redirect = (to.query.redirect as string) || preferredLanding
     return next(redirect)
+  }
+
+  if (authed && to.path === "/" && !_from.name && preferredLanding !== "/") {
+    return next(preferredLanding)
   }
 
   return next()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterView, useRoute, useRouter } from "vue-router"
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import AppHeader from "./components/layout/AppHeader.vue"
@@ -12,16 +12,20 @@ import { WifiOffIcon } from "lucide-vue-next"
 import { useCommsStore } from "@/stores/comms"
 import { storeToRefs } from "pinia"
 import { useAuthStore } from "@/stores/auth"
+import { useUserPreferencesStore } from "@/stores/userPreferences"
 
 const route = useRoute()
 const router = useRouter()
-const THEME_STORAGE_KEY = "skyhook-theme"
 const isDark = ref(false)
 const auth = useAuthStore()
 const { isAuthenticated, userName, userEmail } = storeToRefs(auth)
+const preferences = useUserPreferencesStore()
+const { themePreference, compactSidebar, showSidebarLabels, callsign } = storeToRefs(preferences)
 
 const comms = useCommsStore()
 const { nb, bb } = storeToRefs(comms)
+let themeMediaQuery: MediaQueryList | null = null
+let removeThemeListener: (() => void) | null = null
 
 const formatBps = (bps: number | null | undefined): string => {
   if (bps == null || Number.isNaN(bps)) return "n/a"
@@ -46,23 +50,43 @@ const wsBadgeClass = computed(() => {
 
 const applyTheme = (dark: boolean) => {
   isDark.value = dark
-  const root = document.documentElement
-  root.classList.toggle("dark", dark)
-  localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light")
+  document.documentElement.classList.toggle("dark", dark)
 }
 
-const toggleTheme = () => applyTheme(!isDark.value)
+const syncThemeFromPreference = () => {
+  const prefersDark = themeMediaQuery?.matches ?? window.matchMedia("(prefers-color-scheme: dark)").matches
+  applyTheme(themePreference.value === "dark" || (themePreference.value === "system" && prefersDark))
+}
+
+const toggleTheme = () => {
+  preferences.updatePreferences({
+    themePreference: isDark.value ? "light" : "dark",
+  })
+}
 
 const handleSignOut = () => {
   auth.signOut()
   router.replace({ path: "/login", query: { redirect: route.fullPath } })
 }
 
+const sidebarDisplayName = computed(() => callsign.value.trim() || userName.value || "Skyhook Operator")
+
 onMounted(() => {
-  const storedPreference = localStorage.getItem(THEME_STORAGE_KEY)
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-  applyTheme(storedPreference ? storedPreference === "dark" : prefersDark)
+  preferences.initFromStorage()
   auth.initFromStorage()
+  themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+  const handleThemeChange = () => {
+    if (themePreference.value === "system") {
+      syncThemeFromPreference()
+    }
+  }
+  themeMediaQuery.addEventListener("change", handleThemeChange)
+  removeThemeListener = () => themeMediaQuery?.removeEventListener("change", handleThemeChange)
+  syncThemeFromPreference()
+})
+
+watch(themePreference, () => {
+  syncThemeFromPreference()
 })
 
 onMounted(() => {
@@ -119,6 +143,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  removeThemeListener?.()
+  removeThemeListener = null
   socket.off("connect")
   socket.off("disconnect")
   socket.off("connect_error")
@@ -133,11 +159,18 @@ onBeforeUnmount(() => {
     <RouterView v-slot="{ Component, route: currentRoute }">
       <component :is="Component" v-if="currentRoute.meta?.layout === 'auth'" />
 
-      <SidebarProvider v-else class="h-svh overflow-hidden">
+      <SidebarProvider
+        v-else
+        class="h-svh overflow-hidden"
+        :open="showSidebarLabels"
+        @update:open="preferences.updatePreferences({ showSidebarLabels: $event })"
+      >
         <AppSidebar
           :current-route-name="route.name ? String(route.name) : null"
           :is-dark="isDark"
-          :user-name="userName"
+          :compact="compactSidebar"
+          :show-labels="showSidebarLabels"
+          :user-name="sidebarDisplayName"
           :user-email="userEmail"
           @toggle-theme="toggleTheme"
           @sign-out="handleSignOut"
