@@ -1,4 +1,5 @@
 # Skyhook
+Skyhook is a ground-station software suite for flight planning, real-time telemetry acquisition, data logging, and post-flight analysis.
 
 ## UI:
  - vuejs
